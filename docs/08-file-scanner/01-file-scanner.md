@@ -16,6 +16,7 @@ file-scanner-app    (ghcr.io/suitenumerique/file-scanner)
       serves the REST API: /api/v1.0/scan, /api/v1.0/scan-async, /check, /metrics
 file-scanner-worker (ghcr.io/suitenumerique/file-scanner)
   └── python -m worker — dramatiq worker running async scans + webhook delivery
+      metrics on port 9191 (published on the host as st_file_scanner_worker_metrics_port)
 file-scanner-clamav (docker.io/clamav/clamav)
   └── clamd on port 3310 (compose-internal only) + freshclam signature updater
 file-scanner-exav   (ghcr.io/sylvinus/exav)   — optional, off by default
@@ -148,6 +149,7 @@ complete variable reference.
 | `st_file_scanner_uid` | Unix UID for the file-scanner user | `1108` |
 | `st_file_scanner_env` | Environment content (API + worker) | _(empty)_ |
 | `st_file_scanner_clamav_tag` | ClamAV image tag | `1.5.4` |
+| `st_file_scanner_worker_metrics_port` | Host port of the worker metrics endpoint (empty disables it) | `127.0.0.1:50801` |
 | `st_file_scanner_rollback_enabled` | Rollback on failure | `false` |
 
 ## Network & Ports
@@ -155,28 +157,85 @@ complete variable reference.
 | Variable | Default | Container port |
 |----------|---------|---------------|
 | `st_file_scanner_port` | `50800` | 8090 (API) |
+| `st_file_scanner_worker_metrics_port` | `127.0.0.1:50801` | 9191 (worker metrics) |
 | `st_file_scanner_cadvisor_port` | `127.0.0.1:50899` | 8080 (cadvisor) |
 
-The file-scanner unit publishes the API port and nothing else: clamd (3310) and exav
-stay on the compose network. cAdvisor is a separate unit, off by default, and its
-port is bound to loopback. The broker is reached outbound, on whatever
+The file-scanner unit publishes the API port and the worker metrics port, the latter
+bound to loopback by default: keep the `127.0.0.1:` host part when you change
+`st_file_scanner_worker_metrics_port`, since a bare port publishes it on every host
+interface. clamd (3310) and exav stay on the compose network. cAdvisor is a
+separate unit, off by default, and its port is bound to loopback too. The broker is reached outbound, on whatever
 `WORKER_BROKER_URL` points at.
 
 ## Monitoring
 
-`GET /metrics` exposes Prometheus metrics (scan counters, durations, signature
-freshness). Because the endpoint rides the published API port and its `api_client`
-label names the calling services, the bootstrap questionnaire **generates a
-`PROMETHEUS_API_KEY` by default** (kept in the vault — read it with `st-cli secrets`
-and set it as the scrape job's bearer token). Decline the confirm only when the port
-is isolated at the network layer.
+file-scanner exposes Prometheus metrics on two endpoints, one per process, each
+scraped as its own target:
 
-Sync-scan counters are exposed by the API process; async scans are counted in the
-worker process, which serves no HTTP — with the default stack, expect the async
-counters to be absent from scrapes (see the upstream
-[monitoring notes](https://github.com/suitenumerique/file-scanner/blob/main/docs/deployment.md#monitoring)).
+| Endpoint | Process | Covers |
+|----------|---------|--------|
+| `http://<host>:50800/metrics` (`st_file_scanner_port`) | API | HTTP traffic, sync scans, the ClamAV signature database clamd has loaded, queue state |
+| `http://127.0.0.1:50801/metrics` (`st_file_scanner_worker_metrics_port`) | worker | async scans, downloads, webhook deliveries, dramatiq message metrics |
 
-Serving no HTTP, the worker is probed with upstream's
+The full catalogue, dashboard and alert queries are in the upstream
+[metrics notes](https://github.com/suitenumerique/file-scanner/blob/main/docs/metrics.md).
+The worker endpoint needs file-scanner 0.5.0 or later; an older image ignores
+`WORKER_METRICS_PORT`, and the async counters are then absent from every scrape.
+
+### Upgrading from file-scanner 0.4
+
+File-scanner 0.5.0 changes some metrics, so update the dashboards and alerts that use
+them:
+
+| 0.4 | 0.5.0 |
+|-----|-------|
+| `filescanner_signature_version{scanner}` | `filescanner_clamav_db_version{daemon}` |
+| `filescanner_signature_outdated{scanner}` | no direct replacement: alert on the age of `filescanner_clamav_db_timestamp_seconds{daemon}`, and on `filescanner_clamav_up{daemon} == 0` |
+| `filescanner_scan_duration_seconds{scanner, api_client}` | `filescanner_scan_duration_seconds{scanner, verdict, mode}`: group by caller with `filescanner_scans_total`, which keeps `api_client` |
+
+`filescanner_scans_total` keeps its name and gains a `mode` label (`sync` or `async`).
+The upstream metrics notes give the replacement alert queries.
+
+Both endpoints require `PROMETHEUS_API_KEY` as a bearer token when it is set. Because
+the API endpoint rides the published API port and the `api_client` label names the
+calling services, the bootstrap questionnaire **generates a `PROMETHEUS_API_KEY` by
+default** (kept in the vault — read it with `st-cli secrets` and set it as the bearer
+token of both scrape jobs). Decline the confirm only when the ports are isolated at
+the network layer.
+
+Both endpoints are plain HTTP, so the bearer token travels in clear text. The API
+endpoint rides `st_file_scanner_port`, which callers reach too: keep that port on a
+private network, and scrape it from another host only through an encrypted path
+(WireGuard, SSH tunnel) or a TLS-terminating proxy, never across an untrusted network.
+The worker endpoint is published on loopback for a scraper on the host.
+A remote scraper must reach it through an encrypted path (WireGuard, SSH tunnel), not
+by publishing it on a public interface. Set `st_file_scanner_worker_metrics_port` to
+an empty string to turn it off: the role then sets `WORKER_METRICS_PORT=0`, which
+also stops the extra process that serves it.
+
+```alloy
+prometheus.scrape "file_scanner" {
+  targets = [
+    { job = "file-scanner-app", __address__ = "127.0.0.1:50800" },
+    { job = "file-scanner-worker", __address__ = "127.0.0.1:50801" },
+  ]
+  bearer_token    = sys.env("PROMETHEUS_API_KEY")
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.default.receiver]
+}
+```
+
+`sys.env` reads the Alloy process environment: set `PROMETHEUS_API_KEY` there, for
+example with `Environment=` in a drop-in of the Alloy systemd unit. To keep the key out
+of the environment, write it to a file Alloy can read and use `bearer_token_file`
+instead of `bearer_token`.
+
+The worker forks `st_file_scanner_worker_processes` processes and aggregates their
+samples itself (prometheus multiprocess mode, in a directory it wipes at start), so
+one scrape covers them all. It exports no `process_*` / `python_*` metrics: take host
+metrics from cAdvisor or a node exporter.
+
+The worker is probed with upstream's
 [`python -m health`](https://github.com/suitenumerique/file-scanner/blob/main/src/health.py),
 which sends a dramatiq ping on a queue only that container consumes and waits for the
 answer — the broker, the consumer, a worker thread and the result backend in one probe.

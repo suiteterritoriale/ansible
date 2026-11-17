@@ -32,10 +32,19 @@ services:
     # host so it can be sized. 1 x 4 jobs, not upstream's 2 x 8, because clamav
     # spools the same bytes again. DOWNLOAD_DIR cannot go in ./env: the API shares
     # it and creates the directory at import time, with no mount for it.
+    # WORKER_METRICS_PORT is owned here too: 9191 matches the published port
+    # below, 0 turns the endpoint (and its extra process) off.
     environment:
       - DOWNLOAD_DIR=/downloads
       - WORKER_PROCESSES={{ st_file_scanner_worker_processes }}
       - WORKER_THREADS={{ st_file_scanner_worker_threads }}
+      - WORKER_METRICS_PORT={{ '9191' if st_file_scanner_worker_metrics_port | length > 0 else '0' }}
+{% if st_file_scanner_worker_metrics_port | length > 0 %}
+    # Worker metrics (async scans, downloads, webhooks, dramatiq), for a scraper
+    # on the host. Plain HTTP behind PROMETHEUS_API_KEY: keep it on loopback.
+    ports:
+      - "{{ st_file_scanner_worker_metrics_port }}:9191"
+{% endif %}
     volumes:
       - ./downloads:/downloads
     depends_on:
