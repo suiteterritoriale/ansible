@@ -42,7 +42,9 @@ Installs and configures the podman rootless base for La Suite Territoriale appli
 | st_podman_application_compose_template | Local path to the docker compose template for the application. | str | no |  |
 | st_podman_application_restart_policy | The restart policy to apply to the systemd unit of the application. | str | no | `on-abnormal` |
 | st_podman_application_rollback_enabled | Whether or not to trigger the rollback tasks if the deployment fails. | bool | no | `False` |
-| st_podman_application_timeout | The timeout for starting the application compose. | int | no | `300` |
+| st_podman_application_timeout | The timeout for starting the application compose. It does not include the image pull, see `st_podman_application_pull_timeout`. | int | no | `300` |
+| st_podman_application_pull_timeout | The timeout, in seconds, for pulling the images of the application compose at each start. When the pull fails or times out, the start continues: `up` uses the images already on the host, and pulls only the images that are missing. | int | no | `600` |
+| st_podman_application_start_limit_burst | The number of starts of the application unit that systemd allows within a window of `(st_podman_application_start_limit_burst + 1) × (st_podman_application_pull_timeout + st_podman_application_timeout + 60)` seconds, the first start and the automatic restarts included. Beyond it, systemd stops restarting the unit and leaves it `failed`. A deployment resets this counter before it restarts the unit. Set it to 0 to disable the limit: systemd then restarts the unit without end. | int | no | `4` |
 
 #### Choices for main > st_podman_application_restart_policy
 

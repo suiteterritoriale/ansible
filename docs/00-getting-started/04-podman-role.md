@@ -37,8 +37,31 @@ them directly. However, you can use the podman role standalone to deploy custom 
 2. **Deploys** a systemd user unit from `application_systemd_unit.j2`
 3. **Creates** application directories and files (with container UID ownership)
 4. **Deploys** the compose template
-5. **Starts** and enables the systemd unit
+5. **Starts** and enables the systemd unit, restarts it if it is not `active`, and fails if it does not become `active`
 6. **Rolls back** on failure (if enabled)
+
+## Application Start
+
+The unit runs `podman-compose pull` and `podman-compose up -d`, then waits until every container of
+the declared services is running and, when it has a healthcheck, `healthy`. It then reports ready to
+systemd.
+
+- The pull lasts at most `st_podman_application_pull_timeout` seconds and does not count in the wait.
+  When it fails or times out, the start continues: `up` uses the images already on the host, and
+  pulls only the images that are missing.
+- The wait lasts at most `st_podman_application_timeout` seconds, the time `up -d` spends on
+  `depends_on` conditions included. At the timeout, the journal lists each container that is not
+  ready, with its state and health.
+- A one-off container started with `podman-compose run` (for example `st-cli oneoff`) does not
+  count. A restart leaves it running on the old image until it exits, and the pod stays up meanwhile.
+- Unless `st_podman_application_restart_policy` is `no`, systemd restarts the unit after a start
+  that times out. Any other failure, such as a container that exits with an error, follows
+  `st_podman_application_restart_policy`: `on-failure` and `always` restart the unit, the default
+  `on-abnormal` does not.
+- After `st_podman_application_start_limit_burst` starts (4 by default) within
+  `(st_podman_application_start_limit_burst + 1) × (st_podman_application_pull_timeout + st_podman_application_timeout + 60)`
+  seconds, systemd stops restarting the unit and leaves it `failed`. A deployment resets this limit
+  before it restarts the unit. Set the variable to `0` to disable the limit.
 
 ## Prerequisites
 
@@ -122,7 +145,9 @@ Used with `tasks_from: application.yml`:
 | `st_podman_application_directories` | List of `{name, mode, container_uid}` dirs to create | _(none)_ |
 | `st_podman_application_restart_policy` | Systemd restart policy | `on-abnormal` |
 | `st_podman_application_rollback_enabled` | Enable rollback on deployment failure | `false` |
-| `st_podman_application_timeout` | Startup timeout in seconds | `300` |
+| `st_podman_application_timeout` | Startup timeout in seconds, image pull excluded | `300` |
+| `st_podman_application_pull_timeout` | Image pull timeout in seconds, at each start | `600` |
+| `st_podman_application_start_limit_burst` | Starts allowed before the unit stays `failed`, `0` for no limit | `4` |
 
 ## File Ownership and Container UIDs
 

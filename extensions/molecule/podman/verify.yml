@@ -492,3 +492,64 @@
           - not secrets_dir_after_empty.stat.exists
         fail_msg: "The secrets directory still exists."
         success_msg: "The secrets directory is deleted."
+
+    # A one-off container has the labels and the healthcheck of its service. Running
+    # `sleep` instead of redis, it never gets healthy: the restart must not wait for it.
+    - name: "Start a one-off container that never gets healthy"
+      become: true
+      become_user: testuser
+      become_method: ansible.builtin.sudo
+      become_flags: "-i"
+      ansible.builtin.command:
+        cmd: "podman-compose run -d --rm --name testapp_redis_oneoff redis sleep infinity"
+        chdir: "/opt/testuser/testapp"
+      changed_when: true
+
+    - name: "Restart the test application while the one-off runs"
+      become: true
+      become_user: testuser
+      become_method: ansible.builtin.sudo
+      become_flags: "-i"
+      ansible.builtin.systemd_service:
+        name: testapp
+        state: restarted
+        scope: user
+
+    - name: "Verify the test application is active after the restart"  # noqa: command-instead-of-module
+      become: true
+      become_user: testuser
+      become_method: ansible.builtin.sudo
+      become_flags: "-i"
+      ansible.builtin.command:
+        cmd: "systemctl --user is-active testapp"
+      register: testapp_active_with_oneoff
+      changed_when: false
+      failed_when: false
+
+    - name: "Verify the one-off container still runs"
+      become: true
+      become_user: testuser
+      become_method: ansible.builtin.sudo
+      become_flags: "-i"
+      ansible.builtin.command:
+        cmd: "podman inspect --format {{ '{{.State.Status}}' }} testapp_redis_oneoff"
+      register: oneoff_state
+      changed_when: false
+      failed_when: false
+
+    - name: "Remove the one-off container"
+      become: true
+      become_user: testuser
+      become_method: ansible.builtin.sudo
+      become_flags: "-i"
+      ansible.builtin.command:
+        cmd: "podman rm -f -t 0 --ignore testapp_redis_oneoff"
+      changed_when: true
+
+    - name: "Assert the restart ignores the one-off container"
+      ansible.builtin.assert:
+        that:
+          - testapp_active_with_oneoff.stdout == 'active'
+          - oneoff_state.stdout == 'running'
+        fail_msg: "The test application is {{ testapp_active_with_oneoff.stdout }}, the one-off is {{ oneoff_state.stdout }}."
+        success_msg: "The test application restarted with the one-off still running."

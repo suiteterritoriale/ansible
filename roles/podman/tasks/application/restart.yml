@@ -1,0 +1,24 @@
+---
+# A unit that reached its start limit refuses any new start, even a manual one, until
+# its counter is reset. Reset it, so that a deployment can always restart the unit.
+- name: "systemctl --user reset-failed {{ st_podman_application_name }}"  # noqa: command-instead-of-module
+  become: true
+  become_user: "{{ st_podman_user }}"
+  become_method: ansible.builtin.sudo
+  become_flags: "-i"
+  ansible.builtin.command:
+    cmd: "systemctl --user reset-failed {{ st_podman_application_name }}"
+  changed_when: false
+  failed_when: false
+
+# Returns once the unit is ready, or fails as soon as this start fails. systemd may then
+# retry on its own (RestartForceExitStatus), up to the start limit.
+- name: "systemctl --user restart {{ st_podman_application_name }}"
+  become: true
+  become_user: "{{ st_podman_user }}"
+  become_method: ansible.builtin.sudo
+  become_flags: "-i"
+  ansible.builtin.systemd_service:
+    name: "{{ st_podman_application_name }}"
+    state: restarted
+    scope: user
