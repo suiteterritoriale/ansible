@@ -190,7 +190,15 @@ def test_file_scanner_component_metadata():
 
 def test_worker_component_metadata():
     """Each app exposes a first-class workers component (is_worker, app_name, enabled_var)."""
-    for app in ("drive", "messages", "meet", "docs", "transfers", "conversations"):
+    for app in (
+        "drive",
+        "messages",
+        "meet",
+        "docs",
+        "transfers",
+        "conversations",
+        "contacts",
+    ):
         w = appmeta.load_app(app).worker()
         assert w is not None, f"{app} has no workers component"
         assert w.is_worker is True
@@ -309,6 +317,30 @@ def test_component_unknown_raises_stclierror():
     meta = appmeta.load_app("meet")
     with pytest.raises(StCliError, match=r"unknown component 'bogus' for app 'meet'"):
         meta.component("bogus")
+
+
+def test_contacts_component_metadata():
+    """contacts has two components (core + workers), no dependencies, a backend
+    and a frontend env_render layer, and no S3 or SMTP requirement."""
+    meta = appmeta.load_app("contacts")
+    assert {c.key for c in meta.components} == {"contacts", "workers"}
+    assert meta.dependencies == []
+
+    core = meta.core()
+    assert core.role == "suitenumerique.st.contacts"
+    assert core.user == "contacts"
+    assert core.dir_var == "st_contacts_dir"
+    assert core.enabled_var == "st_contacts_enabled"
+
+    spec = meta.env_render_spec("contacts")
+    assert set(spec.keys()) == {"backend", "frontend"}
+    assert spec["backend"]["blob_var"] == "st_contacts_backend_env"
+    assert spec["frontend"]["blob_var"] == "st_contacts_frontend_env"
+    assert meta.component_vars("contacts")["st_contacts_public_host"] == "{DOMAIN}"
+
+    reqs = meta.requirements
+    assert any("PostgreSQL" in r for r in reqs)
+    assert not any("S3" in r or "SMTP" in r for r in reqs)
 
 
 def test_conversations_component_metadata():

@@ -475,6 +475,24 @@ def conversations_first_run_script() -> list[tuple]:
     ]
 
 
+def contacts_first_run_script() -> list[tuple]:
+    return [
+        ("select", "Secret backend:", "ansible-vault"),
+        ("text", "contacts host(s)", "10.0.0.13"),
+        ("text", "workers (leave blank", ""),
+        ("text", "Public domain for contacts", "contacts.example.org"),
+        ("select", "Database configuration:", "DATABASE_URL"),
+        ("text", "DATABASE_URL", "postgres://contacts"),
+        ("text", "REDIS_URL", "redis://redis:6379/0"),
+        ("select", "Identity provider:", "keycloak"),
+        ("text", "Keycloak base URL", "https://idp.example.org"),
+        ("text", "Keycloak realm", "master"),
+        ("text", "OIDC_RP_CLIENT_ID", "contacts-client-id"),
+        ("password", "OIDC_RP_CLIENT_SECRET", "oidc-secret"),
+        ("confirm", "cadvisor", True),
+    ]
+
+
 def messages_first_run_script(
     *,
     db_mode: str = "url",

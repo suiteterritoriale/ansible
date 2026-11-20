@@ -1,0 +1,12 @@
+---
+- name: "Import Suite Territoriale podman role."
+  ansible.builtin.import_role:
+    name: suitenumerique.st.podman
+  vars:
+    st_podman_user: "contacts"
+    st_podman_uid: "{{ st_contacts_uid }}"
+    st_podman_gid: "{{ st_contacts_gid }}"
+    st_podman_registries: "{{ st_contacts_registries | default([]) }}"
+
+- name: "Deploy contacts."
+  ansible.builtin.import_tasks: deploy.yml

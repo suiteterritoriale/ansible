@@ -1,0 +1,44 @@
+---
+app: contacts
+env_docs_url: "https://github.com/suitenumerique/contacts/tree/main/env.d"
+arch_docs_url: "https://github.com/suitenumerique/st-ansible/tree/main/docs/11-contacts"
+requirements:
+  - "[bold]IP[/bold] or hostname of the VM(s)"
+  - "[bold]PostgreSQL[/bold] host and credentials"
+  - "[bold]Redis[/bold] host and credentials"
+  - "[bold]Identity provider[/bold] URLs and credentials (ProConnect Integration: create an app at https://partenaires.proconnect.gouv.fr/)"
+components:
+  - key: contacts
+    role: suitenumerique.st.contacts
+    user: contacts
+    app_name: contacts
+    dir_var: st_contacts_dir
+    enabled_var: st_contacts_enabled
+    deploy_order: 20
+    is_core: true
+    # component-level ansible vars derived from questionnaire answers ({DOMAIN} etc.)
+    vars:
+      st_contacts_public_host: "{DOMAIN}"   # required by the contacts role (healthcheck Host header)
+      # Run DB migrations only once across a multi-host deploy. Plays are serial:1,
+      # so the run_once migrations task of the role fires on every host. Gate it to
+      # the first play host. Braces are quadrupled so str.format emits literal {{ }}.
+      st_contacts_backend_run_migrations: "{{{{ true if inventory_hostname == ansible_play_hosts_all[0] else false }}}}"
+    env_render:
+      backend:
+        blob_var: st_contacts_backend_env
+        templates:
+          - contacts.backend.env.j2
+      frontend:
+        blob_var: st_contacts_frontend_env
+        templates:
+          - contacts.frontend.env.j2
+  - key: workers
+    role: suitenumerique.st.contacts
+    user: contacts
+    app_name: workers          # role systemd --user unit + /opt/contacts/workers
+    dir_var: st_contacts_workers_dir
+    enabled_var: st_contacts_workers_enabled
+    deploy_order: 30
+    is_core: false
+    is_worker: true
+dependencies: []

@@ -1068,6 +1068,11 @@ def _ask_core(meta, backend: SecretBackend, answers: dict | None = None) -> dict
         # keeps a committed value: unlike the cache it must not evict, so it can
         # legitimately point somewhere else.
         answers.setdefault("WORKER_BROKER_URL", answers["REDIS_URL"])
+    elif app == "contacts":
+        # dramatiq, not celery. The broker and the result backend default to the
+        # cache Redis, and keep a committed value, like transfers.
+        answers.setdefault("DRAMATIQ_BROKER_URL", answers["REDIS_URL"])
+        answers.setdefault("DRAMATIQ_RESULT_BACKEND_URL", answers["REDIS_URL"])
     else:
         answers["CELERY_BROKER_URL"] = answers["REDIS_URL"]
     if app == "conversations":
@@ -1076,8 +1081,8 @@ def _ask_core(meta, backend: SecretBackend, answers: dict | None = None) -> dict
 
     # messages does NOT use the django-lasuite default S3 storage (AWS_S3_*). It
     # uses STORAGE_MESSAGE_* instead (see _ask_messages_storage), so skip the S3
-    # questionnaire entirely for it.
-    if app != "messages":
+    # questionnaire entirely for it. contacts stores nothing in S3.
+    if app not in ("messages", "contacts"):
         # Every app keeps the literal endpoint and bucket in the backend blob.
         endpoint = _ask(
             "AWS_S3_ENDPOINT_URL",
@@ -1185,6 +1190,13 @@ def _ask_core(meta, backend: SecretBackend, answers: dict | None = None) -> dict
             _recall(answers, "MESSAGES_TECHNICAL_DOMAIN"),
             placeholder="mail.example.org",
         )
+
+    if app == "contacts":
+        # Production requires SALT_KEY. It is a comma-separated key list, so the
+        # generated key must not contain a comma: gen_token is URL-safe.
+        _ask_secret(answers, backend, "SALT_KEY", core_key, gen=secrets.gen_token)
+        # The frontend Caddy sets X-Forwarded-For.
+        answers.setdefault("NUM_PROXIES", "1")
 
     if app == "transfers":
         # Optional Drive integration (file picker). Left unset → integration off.
