@@ -27,7 +27,7 @@ argument_specs:
         type: "str"
         description: "Tag of the file-scanner docker image to deploy."
         # renovate: datasource=github-releases depName=suitenumerique/file-scanner versioning=semver extractVersion=^v(?<version>.+)$
-        default: "0.4.0"
+        default: "0.5.0"
       st_file_scanner_clamav_image:
         type: "str"
         description: "Image repository for the bundled ClamAV daemon."
@@ -59,7 +59,7 @@ argument_specs:
         default: "file_scanner/env.j2"
       st_file_scanner_env:
         type: "str"
-        description: "Content of the default env_template, not used if st_file_scanner_env_template is defined. Three keys are not yours to set here, because the compose template sets them on the worker and they take precedence: `WORKER_PROCESSES` and `WORKER_THREADS` come from `st_file_scanner_worker_processes` / `st_file_scanner_worker_threads`, and `DOWNLOAD_DIR` points at a host directory under the application directory — on the worker only, since the API creates that path at import time and has no mount for it."
+        description: "Content of the default env_template, not used if st_file_scanner_env_template is defined. Four keys are not yours to set here, because the compose template sets them on the worker and they take precedence: `WORKER_PROCESSES` and `WORKER_THREADS` come from `st_file_scanner_worker_processes` / `st_file_scanner_worker_threads`, `WORKER_METRICS_PORT` from `st_file_scanner_worker_metrics_port`, and `DOWNLOAD_DIR` points at a host directory under the application directory — on the worker only, since the API creates that path at import time and has no mount for it."
         default: ""
       st_file_scanner_worker_processes:
         type: "int"
@@ -69,6 +69,10 @@ argument_specs:
         type: "int"
         description: "Threads per dramatiq worker process (``WORKER_THREADS``). See `st_file_scanner_worker_processes` for the disk budget the product of the two implies."
         default: 4
+      st_file_scanner_worker_metrics_port:
+        type: "str"
+        description: "The host published port of the worker metrics endpoint (container port 9191, `WORKER_METRICS_PORT`), for a scraper on the host such as Alloy. Use the form `ip:port` and keep the `127.0.0.1:` host part: the default binds to localhost only, and a bare port publishes the endpoint on every host interface. The worker serves there what the API `/metrics` cannot see: async scans, downloads, webhook deliveries and dramatiq message metrics, behind `PROMETHEUS_API_KEY` like the API endpoint: when the key is set, both require it as a bearer token, and when it is unset, both are open. An empty string disables the endpoint (`WORKER_METRICS_PORT=0`). Set in the compose `environment` of the worker, so it overrides a `WORKER_METRICS_PORT` line in `st_file_scanner_env`. Needs file-scanner 0.5.0 or later; an older image ignores it."
+        default: "127.0.0.1:50801"
       st_file_scanner_clamav_env_template:
         type: "str"
         description: "Local path to the custom template to use for the clamav env file."
