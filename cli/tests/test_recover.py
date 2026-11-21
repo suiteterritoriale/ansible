@@ -420,3 +420,114 @@ def test_recover_shared_survives_undecryptable_vault(repo, monkeypatch):
 def test_recover_shared_empty_shared_list(repo):
     seed_meet_unit(repo)
     assert recover.recover_shared("meet", "prod", "meet", []) == {}
+
+
+def _save_docs_unit(component: str, **extra) -> None:
+    data = tree.load_vars("docs", "prod", component)
+    for name, value in extra.items():
+        data[name] = value
+    tree.save_vars("docs", "prod", component, data)
+
+
+def test_recover_reads_the_declared_secret_files_keys(repo):
+    _save_docs_unit(
+        "docs",
+        st_docs_backend_secret_files=[
+            {"env": "JWT_PRIVATE_KEY", "content": "{{ vault_jwt_private_key }}"},
+            {"env": "MY_OTHER_SECRET", "content": "kept-by-operator"},
+        ],
+    )
+    answers = recover.recover("docs", "prod", "docs")
+    assert answers["JWT_PRIVATE_KEY"] == "{{ vault_jwt_private_key }}"
+    # an undeclared key is the operator's: never an answer
+    assert "MY_OTHER_SECRET" not in answers
+
+
+def test_recover_secret_files_per_component(repo):
+    _save_docs_unit(
+        "yhub",
+        st_docs_yhub_secret_files=[
+            {"env": "YHUB_JWT_PRIVATE_KEY", "content": "{{ vault_yhub_jwt }}"}
+        ],
+    )
+    answers = recover.recover("docs", "prod", "yhub")
+    assert answers["YHUB_JWT_PRIVATE_KEY"] == "{{ vault_yhub_jwt }}"
+    assert "JWT_PRIVATE_KEY" not in answers
+
+
+def test_recover_secret_files_keeps_a_hashi_lookup_reference_verbatim(repo):
+    ref = "{{ lookup('community.hashi_vault.hashi_vault', 'kv/data/docs:K') }}"
+    _save_docs_unit(
+        "docs",
+        st_docs_backend_secret_files=[{"env": "JWT_PRIVATE_KEY", "content": ref}],
+    )
+    assert recover.recover("docs", "prod", "docs")["JWT_PRIVATE_KEY"] == ref
+
+
+def test_recover_secret_files_item_with_src_stops_a_new_key(repo):
+    """An item shipped as a file has no content: an empty answer still stops
+    `_ask_secret` from minting a key nothing would use."""
+    _save_docs_unit(
+        "docs",
+        st_docs_backend_secret_files=[
+            {"env": "JWT_PRIVATE_KEY", "src": "files/jwt.pem"}
+        ],
+    )
+    assert recover.recover("docs", "prod", "docs")["JWT_PRIVATE_KEY"] == ""
+
+
+def test_recover_secret_files_blob_value_wins(repo):
+    _save_docs_unit(
+        "docs",
+        st_docs_backend_env="JWT_PRIVATE_KEY=from-the-blob\n",
+        st_docs_backend_secret_files=[
+            {"env": "JWT_PRIVATE_KEY", "content": "from-the-list"}
+        ],
+    )
+    assert recover.recover("docs", "prod", "docs")["JWT_PRIVATE_KEY"] == (
+        "from-the-blob"
+    )
+
+
+def test_recover_without_a_secret_files_list_or_spec(repo):
+    _save_docs_unit("docs", st_docs_backend_env="DB_HOST=x\n")
+    assert "JWT_PRIVATE_KEY" not in recover.recover("docs", "prod", "docs")
+    seed_meet_unit(repo)
+    assert "JWT_PRIVATE_KEY" not in recover.recover("meet", "prod", "meet")
+
+
+def test_recover_yhub_env_and_public_host(repo):
+    _save_docs_unit(
+        "yhub",
+        st_docs_public_host="docs.example.org",
+        st_docs_yhub_env="SOFT_MIGRATION=true\nREDIS={{ vault_redis }}\n",
+    )
+    answers = recover.recover("docs", "prod", "yhub")
+    assert answers["DOMAIN"] == "docs.example.org"
+    assert answers["SOFT_MIGRATION"] == "true"
+    assert answers["REDIS"] == "{{ vault_redis }}"
+
+
+def test_recover_hosts_narrows_to_a_group(repo):
+    tree.write_groups(
+        "docs", "prod", "docs", {"docs": ["10.0.0.5"], "workers": ["10.0.0.7"]}
+    )
+    assert recover.recover_hosts("docs", "prod", "docs") == ["10.0.0.5", "10.0.0.7"]
+    assert recover.recover_hosts("docs", "prod", "docs", group="docs") == ["10.0.0.5"]
+    assert recover.recover_hosts("docs", "prod", "docs", group="workers") == [
+        "10.0.0.7"
+    ]
+    # an absent group falls back to every host except the workers group
+    assert recover.recover_hosts("docs", "prod", "docs", group="other") == ["10.0.0.5"]
+    assert recover.recover_hosts("docs", "prod", "nope", group="docs") == []
+
+
+def test_recover_hosts_fallback_leaves_out_the_workers_group(repo):
+    """A core group under another name falls back to every host except those
+    of the workers group, so a workers host never joins the core."""
+    paths.hosts_path("docs", "prod", "docs").parent.mkdir(parents=True)
+    paths.hosts_path("docs", "prod", "docs").write_text(
+        "[old_core]\nd1 ansible_host=10.0.0.5\n[workers]\nw1 ansible_host=10.0.0.7\n"
+    )
+    assert recover.recover_hosts("docs", "prod", "docs", group="docs") == ["10.0.0.5"]
+    assert recover.recover_hosts("docs", "prod", "docs") == ["10.0.0.5", "10.0.0.7"]

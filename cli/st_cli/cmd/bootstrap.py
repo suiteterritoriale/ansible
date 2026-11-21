@@ -17,6 +17,7 @@ from .. import __version__
 from ..core import (
     appmeta,
     envrender,
+    keypairs,
     manifest,
     paths,
     recover,
@@ -30,6 +31,9 @@ from ..core import (
 from ..core.errors import StCliError
 from ..core.models import (
     BACKEND_ANSIBLE_VAULT,
+    DEP_LABEL_EXTERNAL,
+    DEP_LABEL_LATER,
+    DEP_LABEL_NOW,
     MODE_EXTERNAL,
     MODE_MANAGED,
     NewComponentOffer,
@@ -72,7 +76,26 @@ _OIDC_PROVIDERS = ["keycloak", "proconnect-prod", "proconnect-integ", "custom"]
 _S3_ENDPOINT_PLACEHOLDER = "https://s3.fr-par.scw.cloud"
 _IDP_PLACEHOLDER = "https://idp.example.org"
 _SMTP_PLACEHOLDER = "smtp.example.org"
-_DOCS_CORE_SECRETS = ("COLLABORATION_SERVER_SECRET", "Y_PROVIDER_API_KEY")
+_DOCS_CORE_SECRETS = ("Y_PROVIDER_API_KEY",)
+
+# Keys that Docs 5 read and Docs 6 ignores, with the blob that holds each one.
+_DOCS_V5_STALE_KEYS = {
+    "COLLABORATION_SERVER_SECRET": "st_docs_backend_env",
+    "COLLABORATION_API_URL": "st_docs_backend_env",
+    "CADDY_YPROVIDER_ENDPOINTS": "st_docs_caddy_env",
+}
+
+# The yhub blob keeps its own copy of these two keys: a hand edit of one blob
+# must not reach the other.
+_DOCS_YHUB_OWN_KEYS = ("COLLABORATION_BACKEND_BASE_URL", "COLLABORATION_SERVER_ORIGIN")
+
+_DOCS_LEGACY_S3_KEYS = (
+    "LEGACY_S3_ENDPOINT_URL",
+    "LEGACY_S3_ACCESS_KEY_ID",
+    "LEGACY_S3_SECRET_ACCESS_KEY",
+    "LEGACY_S3_BUCKET_NAME",
+    "LEGACY_S3_REGION_NAME",
+)
 
 # Apps that carry upstream DJANGO_EMAIL_* settings; messages is skipped (no such
 # settings upstream) so its questionnaire never prompts for SMTP config.
@@ -188,13 +211,14 @@ def _warn_cleared(key: str) -> None:
     )
 
 
-def _ask_optional(answers: dict, key: str, label: str) -> None:
+def _ask_optional(answers: dict, key: str, label: str, fallback: str = "") -> None:
     """Ask an optional text field.
 
-    A blank answer over a recovered value pops the key and warns to remove
-    the stale committed line by hand (``envblob.merge`` never deletes one).
+    ``fallback`` is the suggestion when ``key`` is not recovered yet. A blank
+    answer over a recovered value pops the key and warns to remove the stale
+    committed line by hand (``envblob.merge`` never deletes one).
     """
-    value = _ask(label, _recall(answers, key), required=False)
+    value = _ask(label, _recall(answers, key, fallback), required=False)
     if value:
         answers[key] = value
     elif answers.pop(key, None):
@@ -953,6 +977,26 @@ def _ask_file_scanner(
     return answers
 
 
+def _warn_docs_v5_leftovers(answers: dict, backend: SecretBackend) -> None:
+    """Warn about each committed key that Docs 6 ignores.
+
+    The merge never deletes a line, so the operator removes them by hand.
+    """
+    for key, blob in _DOCS_V5_STALE_KEYS.items():
+        if key not in answers:
+            continue
+        vault_hint = (
+            " and the vault_collaboration_server_secret entry from vault.yml"
+            if key == "COLLABORATION_SERVER_SECRET" and backend.prompts_values()
+            else ""
+        )
+        ui.warn(
+            f"Docs 6 does not read {key}. The merge never deletes committed "
+            f"lines: remove the {key}= line from {blob} in vars.yml{vault_hint} "
+            "by hand."
+        )
+
+
 def _ask_core(meta, backend: SecretBackend, answers: dict | None = None) -> dict:
     """Collect the core component answers (domain, db, redis, s3, secrets, OIDC).
 
@@ -1134,28 +1178,34 @@ def _ask_core(meta, backend: SecretBackend, answers: dict | None = None) -> dict
         # st_docs_public_host (the {{ }} resolves at deploy from the core vars.yml).
         answers["OIDC_REDIRECT_ALLOWED_HOSTS"] = '["https://{{ st_docs_public_host }}"]'
         answers["COLLABORATION_WS_URL"] = (
-            "wss://{{ st_docs_public_host }}/collaboration/ws/"
+            "wss://{{ st_docs_public_host }}/collaboration/ws/v1/docs"
         )
-        answers["COLLABORATION_API_URL"] = (
-            "https://{{ st_docs_public_host }}/collaboration/api/"
-        )
+        # yhub and the converter fetch the backend JWKS at the public URL: a
+        # call inside the compose network fails on ALLOWED_HOSTS.
+        for key in _DOCS_YHUB_OWN_KEYS:
+            answers.setdefault(key, "https://{{ st_docs_public_host }}")
+        # the converter (y-provider) runs in the core compose, like docspec.
+        answers["Y_PROVIDER_API_BASE_URL"] = "http://y-provider:4444/api/"
         # the docspec conversion service ships in the core compose by default, so
         # enable the upload/import feature and point the backend at it over the
         # compose network (backend-only, like Y_PROVIDER_API_BASE_URL).
         answers["CONVERSION_UPLOAD_ENABLED"] = "true"
         answers["DOCSPEC_API_URL"] = "http://docspec:4000/conversion"
-        # COLLABORATION_SERVER_SECRET / Y_PROVIDER_API_KEY are owned by the docs
-        # core and mirrored into yprovider's vault at deploy, the same pattern
-        # as messages' MDA_API_SECRET (see _ask_docs_yprovider).
+        _warn_docs_v5_leftovers(answers, backend)
+        # Y_PROVIDER_API_KEY is owned by the docs core and mirrored into yhub's
+        # vault at deploy, the same pattern as messages' MDA_API_SECRET (see
+        # _ask_docs_yhub).
+        _ask_secret(
+            answers, backend, "Y_PROVIDER_API_KEY", core_key, gen=secrets.gen_token
+        )
+        # The backend signs its tokens with this RSA key and serves the public
+        # half as JWKS. The role writes it as a secret file, not as an env line.
         _ask_secret(
             answers,
             backend,
-            "COLLABORATION_SERVER_SECRET",
+            "JWT_PRIVATE_KEY",
             core_key,
-            gen=secrets.gen_secret,
-        )
-        _ask_secret(
-            answers, backend, "Y_PROVIDER_API_KEY", core_key, gen=secrets.gen_token
+            gen=keypairs.generate_rsa_private_key_pem,
         )
 
     if app == "messages":
@@ -1479,29 +1529,188 @@ def _ask_messages_outbound(
         _warn_cleared_password(backend, "MTA_OUT_RELAY_PASSWORD")
 
 
-# yprovider's published port is a role contract constant (st_docs_yprovider_port
-# default), not an operator choice. No precedent in this file for prompting a
-# fixed port, so it is hardcoded.
-_DOCS_YPROVIDER_PORT = "50601"
+# yhub's published port is a role contract constant (st_docs_yhub_port default),
+# not an operator choice. No precedent in this file for prompting a fixed port,
+# so it is hardcoded.
+_DOCS_YHUB_PORT = "50601"
+_DOCS_HOST_ALIAS = "host.containers.internal"
 
 
-def _docs_yprovider_endpoints(
-    answers: dict, app: str, env: str, core_key: str, yp_hosts: list[str]
-) -> str:
-    """The CADDY_YPROVIDER_ENDPOINTS value for the core caddy_env blob.
+def _docs_unit_hosts(
+    answers: dict, app: str, env: str, core_key: str
+) -> tuple[list[str], list[str]]:
+    """The ``(core hosts, workers hosts)`` of the docs core.
 
-    A single host shared by the core and yprovider uses
-    ``host.containers.internal`` (the podman host alias); any other topology
-    keeps the real ``host:port`` list.
+    A full run stashes both in ``answers`` (the hosts file is not written
+    yet). A standalone run reads the committed hosts file.
     """
-    if not yp_hosts:
-        raise StCliError(
-            "yprovider hosts list is empty — check the yprovider hosts file."
+    meta = appmeta.load_app(app)
+    worker = meta.worker()
+    core_hosts = answers.get("_core_hosts") or tree.read_hosts(
+        app, env, core_key, group=meta.core().app_name
+    )
+    if "_worker_hosts" in answers:
+        worker_hosts = answers["_worker_hosts"]
+    elif worker is not None:
+        worker_hosts = tree.read_hosts(app, env, core_key, group=worker.app_name)
+    else:
+        worker_hosts = []
+    return list(core_hosts), list(worker_hosts)
+
+
+def _hostport(host: str) -> str:
+    """``host:port`` of a yhub host; an IPv6 literal needs brackets."""
+    return f"[{host}]:{_DOCS_YHUB_PORT}" if ":" in host else f"{host}:{_DOCS_YHUB_PORT}"
+
+
+def _docs_yhub_endpoints(
+    answers: dict, app: str, env: str, core_key: str, yhub_hosts: list[str]
+) -> str:
+    """The CADDY_YHUB_ENDPOINTS value for the core caddy_env blob.
+
+    Every core host reads the same blob, and its caddy drops the entries that
+    fail the health check. A rootless container cannot reach the address of its
+    own host, but it reaches it as ``host.containers.internal``. So the alias
+    comes first when a yhub host is a core host. Each yhub host also keeps its
+    real address, except when it is the only core host: no core host can use it.
+    """
+    if not yhub_hosts:
+        raise StCliError("yhub hosts list is empty — check the yhub hosts file.")
+    core_hosts, _ = _docs_unit_hosts(answers, app, env, core_key)
+    entries = []
+    if set(yhub_hosts) & set(core_hosts):
+        entries.append(f"{_DOCS_HOST_ALIAS}:{_DOCS_YHUB_PORT}")
+    only_core = core_hosts[0] if len(core_hosts) == 1 else None
+    entries += [_hostport(h) for h in yhub_hosts if h != only_core]
+    return " ".join(entries)
+
+
+def _yhub_url(host: str) -> str:
+    return f"http://{_hostport(host)}"
+
+
+def _valid_yhub_urls(
+    core_hosts: list[str], worker_hosts: list[str], yhub_hosts: list[str]
+) -> list[str]:
+    """The YHUB_API_BASE_URL values that the topology accepts, best first.
+
+    The backend of every core host and every workers host reads one URL. The
+    alias works only when each of those hosts runs yhub. A yhub host that is
+    neither a core nor a workers host works from all of them.
+    """
+    urls = []
+    if set(yhub_hosts) == set(core_hosts) and set(worker_hosts) <= set(core_hosts):
+        urls.append(f"http://{_DOCS_HOST_ALIAS}:{_DOCS_YHUB_PORT}")
+    taken = set(core_hosts) | set(worker_hosts)
+    urls += [_yhub_url(h) for h in yhub_hosts if h not in taken]
+    return urls
+
+
+def _docs_old_topology(
+    app: str, env: str, core_key: str, committed_endpoints: str
+) -> tuple[list[str], list[str], list[str]] | None:
+    """The ``(core, workers, yhub)`` hosts that the committed values come from.
+
+    The yhub hosts rebuild from the committed CADDY_YHUB_ENDPOINTS, because a
+    standalone yhub run overwrites the yhub hosts file. ``None`` when nothing
+    is committed.
+    """
+    meta = appmeta.load_app(app)
+    worker = meta.worker()
+    old_core = tree.read_hosts(app, env, core_key, group=meta.core().app_name)
+    if not committed_endpoints or not old_core:
+        return None
+    old_workers = (
+        tree.read_hosts(app, env, core_key, group=worker.app_name) if worker else []
+    )
+    names = [e.rsplit(":", 1)[0].strip("[]") for e in committed_endpoints.split()]
+    old_yhub = [n for n in names if n != _DOCS_HOST_ALIAS]
+    if _DOCS_HOST_ALIAS in names and len(old_core) == 1:
+        old_yhub.insert(0, old_core[0])
+    return old_core, old_workers, old_yhub
+
+
+def _warn_unreachable_url(
+    url: str, core_hosts: list[str], worker_hosts: list[str]
+) -> None:
+    """Warn when the URL points at a host that cannot reach its own address."""
+    host = urlsplit(url).hostname
+    if host and host in {*core_hosts, *worker_hosts}:
+        ui.warn(
+            f"YHUB_API_BASE_URL points at {host}, a core or workers host: that "
+            "host cannot reach a yhub on its own address. Use the URL of an "
+            "internal load balancer, or put yhub on its own hosts."
         )
-    core_hosts = answers.get("_core_hosts") or tree.read_hosts(app, env, core_key)
-    if len(yp_hosts) == 1 and sorted(core_hosts) == sorted(yp_hosts):
-        return "host.containers.internal:" + _DOCS_YPROVIDER_PORT
-    return " ".join(f"{h}:{_DOCS_YPROVIDER_PORT}" for h in yp_hosts)
+
+
+def _docs_yhub_url(
+    answers: dict,
+    app: str,
+    env: str,
+    core_key: str,
+    hosts: list[str],
+    old: tuple[list[str], list[str], list[str]] | None,
+    *,
+    ask: bool,
+) -> None:
+    """Set YHUB_API_BASE_URL from the topology, keeping what the operator chose.
+
+    With an unchanged topology a committed value always stays. When the topology
+    changed, a value that the new topology accepts stays, a value that only the
+    old topology gave is recomputed, and any other value is a hand edit that
+    stays with a warning. ``ask`` False (a reuse) asks only when no value can be
+    found.
+    """
+    key = "YHUB_API_BASE_URL"
+    core_hosts, worker_hosts = _docs_unit_hosts(answers, app, env, core_key)
+    valid = _valid_yhub_urls(core_hosts, worker_hosts, hosts)
+    committed = str(answers.get(key) or "")
+    if committed in valid:
+        return
+    if committed:
+        changed = old is not None and tuple(map(set, old)) != (
+            set(core_hosts),
+            set(worker_hosts),
+            set(hosts),
+        )
+        looked_derived = old is not None and committed in {
+            f"http://{_DOCS_HOST_ALIAS}:{_DOCS_YHUB_PORT}",
+            *(_yhub_url(h) for h in old[2]),
+        }
+        if not (changed and looked_derived):
+            if changed:
+                ui.warn(
+                    f"{key} keeps its committed value {committed}. The hosts "
+                    "changed: check that it still reaches yhub."
+                )
+            else:
+                _warn_unreachable_url(committed, core_hosts, worker_hosts)
+            return
+    if len(valid) == 1:
+        answers[key] = valid[0]
+        return
+    if valid and not ask:
+        answers[key] = valid[0]
+        ui.info(
+            f"{key} is {valid[0]}. Run `st-cli bootstrap {app} {env}` in modify "
+            "mode to choose another yhub host."
+        )
+        return
+    if valid:
+        label = (
+            f"{key} (URL of yhub for the backend and the workers: the URL of an "
+            "internal load balancer is better than one host)"
+        )
+    else:
+        label = (
+            f"{key} (type the URL of an internal load balancer in front of yhub; "
+            "a yhub on a core or workers host cannot be reached from that host, "
+            "so else put yhub on its own hosts and answer again)"
+        )
+    answers[key] = _ask(
+        label, valid[0] if valid else "", placeholder="http://yhub.internal:50601"
+    )
+    _warn_unreachable_url(answers[key], core_hosts, worker_hosts)
 
 
 def _ensure_domain(
@@ -1547,30 +1756,231 @@ def _mirror_docs_secret(
     # hashi full run: answers[env_key] already holds the lookup ref, so reuse it.
 
 
-def _ask_docs_yprovider(
+def _s3_origin(endpoint: str) -> str:
+    """Return the scheme and host of ``endpoint``, without a path.
+
+    A value with a Jinja expression cannot be split before Ansible resolves
+    it, so it stays as it is.
+    """
+    if "{{" in endpoint:
+        return endpoint
+    parts = urlsplit(endpoint)
+    if not (parts.scheme and parts.netloc):
+        return endpoint
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def _valid_legacy_s3_endpoint(text: str) -> bool | str:
+    """questionary validator: scheme and host only, no path."""
+    text = (text or "").strip()
+    if "{{" in text:
+        return True
+    parts = urlsplit(text)
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        return "LEGACY_S3_ENDPOINT_URL must start with http:// or https://."
+    if parts.path not in ("", "/"):
+        return "LEGACY_S3_ENDPOINT_URL takes the scheme and the host only, no path."
+    return True
+
+
+def _docs_has_v5_heritage(app: str, env: str, core_seed: dict) -> bool:
+    """True when the tree holds a Docs 5 setup: a yprovider unit or its secret."""
+    return (
+        paths.vars_path(app, env, "yprovider").exists()
+        or "COLLABORATION_SERVER_SECRET" in core_seed
+    )
+
+
+def _ask_docs_legacy_s3(
+    answers: dict, backend: SecretBackend, component: str, core: dict
+) -> None:
+    """Ask the Docs 5 media bucket that yhub reads for the data migration.
+
+    ``core`` holds the S3 answers of the docs core: they are only suggestions
+    on the first run. A recovered ``LEGACY_S3_*`` value wins over them.
+    """
+    raw_endpoint = str(core.get("AWS_S3_ENDPOINT_URL", ""))
+    if raw_endpoint and _s3_origin(raw_endpoint) != raw_endpoint:
+        ui.info(
+            "LEGACY_S3_ENDPOINT_URL takes the scheme and the host of "
+            "AWS_S3_ENDPOINT_URL, without its path."
+        )
+    answers["LEGACY_S3_ENDPOINT_URL"] = _ask(
+        "LEGACY_S3_ENDPOINT_URL (scheme and host of the Docs 5 media bucket, no path)",
+        _recall(
+            answers,
+            "LEGACY_S3_ENDPOINT_URL",
+            _s3_origin(str(core.get("AWS_S3_ENDPOINT_URL", ""))),
+        ),
+        placeholder=_S3_ENDPOINT_PLACEHOLDER,
+        validate=_valid_legacy_s3_endpoint,
+    )
+    answers["LEGACY_S3_BUCKET_NAME"] = _ask(
+        "LEGACY_S3_BUCKET_NAME",
+        _recall(
+            answers,
+            "LEGACY_S3_BUCKET_NAME",
+            str(core.get("AWS_STORAGE_BUCKET_NAME", "")),
+        ),
+    )
+    _ask_optional(
+        answers,
+        "LEGACY_S3_REGION_NAME",
+        "LEGACY_S3_REGION_NAME (optional)",
+        str(core.get("AWS_S3_REGION_NAME", "")),
+    )
+    answers["LEGACY_S3_ACCESS_KEY_ID"] = _ask(
+        "LEGACY_S3_ACCESS_KEY_ID (read-only credentials are better: do not reuse "
+        "the key of the backend)",
+        _recall(answers, "LEGACY_S3_ACCESS_KEY_ID"),
+    )
+    _ask_secret(answers, backend, "LEGACY_S3_SECRET_ACCESS_KEY", component)
+
+
+def _ask_docs_yhub(
     answers: dict,
     backend: SecretBackend,
     hosts: list[str],
     core_key: str,
     app: str,
     env: str,
-) -> None:
-    """docs/yprovider: ensure DOMAIN, mirror the two core-owned collaboration
-    secrets into yprovider's own vault, and derive ``CADDY_YPROVIDER_ENDPOINTS``.
-    ``Y_PROVIDER_API_BASE_URL`` is backend-only and points at the first endpoint.
+) -> dict:
+    """docs/yhub: collect the collaboration server answers.
+
+    Ensures DOMAIN, mirrors the core-owned ``Y_PROVIDER_API_KEY`` into yhub's
+    own vault, asks the yhub database and Redis, the optional Docs 5 data
+    migration and the RSA key, then derives ``CADDY_YHUB_ENDPOINTS`` and
+    ``YHUB_API_BASE_URL`` for the core. Returns the values that only the yhub
+    env blob takes: its own committed origin keeps a hand edit, apart from the
+    core's.
     """
-    core_domain = recover.recover(app, env, core_key).get("DOMAIN", "")
+    yhub_seed = recover.recover(app, env, "yhub")
+    old_yhub_hosts = recover.recover_hosts(app, env, "yhub")
+    committed_endpoints = str(answers.get("CADDY_YHUB_ENDPOINTS") or "")
+    # A replay pre-fills from the committed yhub unit; a key already set by the
+    # core in this run wins.
+    for key, value in yhub_seed.items():
+        if key not in _DOCS_YHUB_OWN_KEYS:
+            answers.setdefault(key, value)
+    core_seed = recover.recover(app, env, core_key)
+    core_domain = core_seed.get("DOMAIN", "")
     _ensure_domain(
         answers,
         "Public domain for docs (for the collaboration server origin)",
         "docs.example.org",
         Recovered(core_domain) if core_domain else "",
     )
+    own = {
+        key: yhub_seed.get(key) or "https://{{ st_docs_public_host }}"
+        for key in _DOCS_YHUB_OWN_KEYS
+    }
     for env_key in _DOCS_CORE_SECRETS:
-        _mirror_docs_secret(answers, backend, core_key, "yprovider", app, env, env_key)
-    endpoints = _docs_yprovider_endpoints(answers, app, env, core_key, hosts)
-    answers["CADDY_YPROVIDER_ENDPOINTS"] = endpoints
-    answers["Y_PROVIDER_API_BASE_URL"] = f"http://{endpoints.split()[0]}/api/"
+        _mirror_docs_secret(answers, backend, core_key, "yhub", app, env, env_key)
+
+    # POSTGRES and REDIS can embed a password and have no *_FILE variant: they
+    # route through the secret backend whole, like WORKER_BROKER_URL.
+    _ask_secret(
+        answers,
+        backend,
+        "POSTGRES",
+        "yhub",
+        gen=lambda: _ask(
+            "POSTGRES (own yhub database, postgres://user:password@host:5432/yhub, "
+            "add ?sslmode=require for TLS)",
+            placeholder="postgres://yhub:password@db.example.org:5432/yhub",
+        ),
+    )
+    _ask_secret(
+        answers,
+        backend,
+        "REDIS",
+        "yhub",
+        gen=lambda: _ask(
+            "REDIS (durable Redis 6.2+ or Valkey for yhub, not the Django cache, "
+            "redis://[user:password@]host:port)",
+            placeholder="redis://redis.example.org:6379",
+        ),
+    )
+
+    was_migrating = _recall_bool(answers, "SOFT_MIGRATION", False)
+    known_choice = "SOFT_MIGRATION" in answers
+    migrate = _confirm(
+        "Migrate the documents of a Docs 5 instance (SOFT_MIGRATION)?",
+        default=(
+            was_migrating
+            if known_choice
+            else _docs_has_v5_heritage(app, env, core_seed)
+        ),
+        # A new decision must be visible in a silent replay.
+        auto=known_choice,
+    )
+    if migrate:
+        # The core values only suggest a first answer. Once the block is
+        # committed, a missing optional value was cleared on purpose.
+        core_s3 = (
+            {}
+            if was_migrating
+            else {
+                k: answers.get(k) or core_seed.get(k, "")
+                for k in (
+                    "AWS_S3_ENDPOINT_URL",
+                    "AWS_STORAGE_BUCKET_NAME",
+                    "AWS_S3_REGION_NAME",
+                )
+            }
+        )
+        answers["SOFT_MIGRATION"] = "true"
+        _ask_docs_legacy_s3(answers, backend, "yhub", core_s3)
+    else:
+        answers["SOFT_MIGRATION"] = "false"
+        left = [k for k in _DOCS_LEGACY_S3_KEYS if k in answers]
+        if left:
+            ui.warn(
+                "SOFT_MIGRATION is off. The merge never deletes committed lines: "
+                f"remove the {', '.join(left)} lines from st_docs_yhub_env in "
+                "vars.yml by hand"
+                + (
+                    " and the vault_legacy_s3_secret_access_key entry from vault.yml."
+                    if backend.prompts_values() and was_migrating
+                    else "."
+                )
+            )
+            for key in left:
+                answers.pop(key)
+
+    # Each yhub replica signs with this RSA key. The role writes it as a
+    # secret file, not as an env line.
+    _ask_secret(
+        answers,
+        backend,
+        "YHUB_JWT_PRIVATE_KEY",
+        "yhub",
+        gen=keypairs.generate_rsa_private_key_pem,
+    )
+
+    if "_core_hosts" not in answers:
+        # A standalone run does not write the core unit, which holds the
+        # caddy upstreams and the backend URL.
+        if paths.vars_path(app, env, core_key).exists():
+            if not core_seed.get("CADDY_YHUB_ENDPOINTS", "").strip():
+                ui.warn(
+                    f"The {core_key} unit does not name yhub yet. Run "
+                    f"`st-cli bootstrap {app} {env}` to write CADDY_YHUB_ENDPOINTS "
+                    "and YHUB_API_BASE_URL."
+                )
+            elif set(hosts) != set(old_yhub_hosts):
+                ui.warn(
+                    f"The {core_key} unit holds CADDY_YHUB_ENDPOINTS and "
+                    "YHUB_API_BASE_URL, and they still use the old yhub hosts. "
+                    f"Run `st-cli bootstrap {app} {env}` again to update them."
+                )
+        return own
+    old = _docs_old_topology(app, env, core_key, committed_endpoints)
+    answers["CADDY_YHUB_ENDPOINTS"] = _docs_yhub_endpoints(
+        answers, app, env, core_key, hosts
+    )
+    _docs_yhub_url(answers, app, env, core_key, hosts, old, ask=True)
+    return own
 
 
 def _ensure_meet_domain(answers: dict, recovered_domain: str = "") -> None:
@@ -2062,14 +2472,14 @@ def _handle_dependency(
         # For an optional dep, offer "No — bootstrap later" before "Yes — bootstrap
         # now" so the highlighted default leans towards skipping it.
         if dep.optional:
-            options["No — bootstrap later"] = "skip"
+            options[DEP_LABEL_LATER] = "skip"
             if not wire_only:
-                options["Yes — bootstrap now"] = "deploy"
+                options[DEP_LABEL_NOW] = "deploy"
         else:
             if not wire_only:
-                options["Yes — bootstrap now"] = "deploy"
-            options["No — bootstrap later"] = "skip"
-        options["Already deployed (enter URL + keys)"] = MODE_EXTERNAL
+                options[DEP_LABEL_NOW] = "deploy"
+            options[DEP_LABEL_LATER] = "skip"
+        options[DEP_LABEL_EXTERNAL] = MODE_EXTERNAL
         # suspend_silent no-ops outside silent mode; inside it, a fresh menu
         # for a genuinely new component must ask, not auto-accept.
         with suspend_silent():
@@ -2079,6 +2489,12 @@ def _handle_dependency(
     # auto-accept a Recovered default meant for the outer replay's answers.
     with suspend_silent() if fresh_silent else nullcontext():
         if choice == "skip":
+            if dep.required:
+                ui.warn(
+                    f"{dep.on} is required for {meta.app}. `st-cli deploy` "
+                    f"refuses until it is set up: run `st-cli bootstrap "
+                    f'{meta.app} {env}` and answer "{DEP_LABEL_NOW}" for {dep.on}.'
+                )
             ui.info(
                 f"{dep.on}: bootstrap later — add it with "
                 f"`st-cli bootstrap {meta.app} {env} -c {dep.on}`."
@@ -2135,28 +2551,27 @@ def _handle_dependency(
                 backend.env_secret(
                     answers, "SPAM_CONFIG", component=core.key, value=value
                 )
-            # A kept, recorded external yprovider keeps its recovered wiring. A
+            # A kept, recorded external yhub keeps its recovered wiring. A
             # freshly declared one, a redo, or a core override must prompt
-            # everything: the core just generated its own
-            # COLLABORATION_SERVER_SECRET/Y_PROVIDER_API_KEY, and the external
-            # unit's values have to replace them.
+            # everything: the core just generated its own Y_PROVIDER_API_KEY,
+            # and the external unit's value has to replace it.
             if (
                 meta.app == "docs"
-                and dep.on == "yprovider"
+                and dep.on == "yhub"
                 and not (only_missing and recorded_external and not override_core)
             ):
                 eps_raw = _ask(
-                    "yprovider endpoints (host:port, comma-separated)",
-                    _recall(answers, "CADDY_YPROVIDER_ENDPOINTS").replace(" ", ","),
+                    "yhub endpoints (host:port, comma-separated)",
+                    _recall(answers, "CADDY_YHUB_ENDPOINTS").replace(" ", ","),
                     placeholder="10.0.0.9:50601,10.0.0.10:50601",
                 )
-                answers["CADDY_YPROVIDER_ENDPOINTS"] = " ".join(
+                answers["CADDY_YHUB_ENDPOINTS"] = " ".join(
                     e.strip() for e in eps_raw.split(",") if e.strip()
                 )
-                answers["Y_PROVIDER_API_BASE_URL"] = _ask(
-                    "Y_PROVIDER_API_BASE_URL (backend-only conversion API)",
-                    _recall(answers, "Y_PROVIDER_API_BASE_URL"),
-                    placeholder="http://yprovider.internal:50601/api/",
+                answers["YHUB_API_BASE_URL"] = _ask(
+                    "YHUB_API_BASE_URL (URL of yhub for the backend and the workers)",
+                    _recall(answers, "YHUB_API_BASE_URL"),
+                    placeholder="http://yhub.internal:50601",
                 )
                 for env_key in _DOCS_CORE_SECRETS:
                     value = _password(env_key) if backend.prompts_values() else None
@@ -2209,26 +2624,32 @@ def _handle_dependency(
                 writer.inject_consumer(rule, value, answers, backend, core.key)
             if meta.app == "meet" and provider.key == "livekit" and not wire_only:
                 _reuse_egress(meta, answers, backend, env)
-            if meta.app == "docs" and provider.key == "yprovider":
-                # Rebuild the caddy upstream list and conversion base URL
-                # from the reused unit's hosts file.
-                yp_hosts = tree.read_hosts(meta.app, env, provider.key)
-                endpoints = _docs_yprovider_endpoints(
-                    answers, meta.app, env, core.key, yp_hosts
+            if meta.app == "docs" and provider.key == "yhub":
+                # Rebuild the caddy upstream list from the reused unit's hosts
+                # file. A recovered YHUB_API_BASE_URL (for example a load
+                # balancer URL) stays.
+                yh_hosts = tree.read_hosts(meta.app, env, provider.key)
+                old = _docs_old_topology(
+                    meta.app,
+                    env,
+                    core.key,
+                    str(answers.get("CADDY_YHUB_ENDPOINTS") or ""),
                 )
-                answers["CADDY_YPROVIDER_ENDPOINTS"] = endpoints
-                answers["Y_PROVIDER_API_BASE_URL"] = (
-                    f"http://{endpoints.split()[0]}/api/"
+                answers["CADDY_YHUB_ENDPOINTS"] = _docs_yhub_endpoints(
+                    answers, meta.app, env, core.key, yh_hosts
                 )
-                # The core must adopt the REUSED unit's secrets: _ask_core just
-                # generated fresh values, which would break the backend/yprovider
+                _docs_yhub_url(
+                    answers, meta.app, env, core.key, yh_hosts, old, ask=False
+                )
+                # The core must adopt the REUSED unit's secret: _ask_core just
+                # generated a fresh value, which would break the backend/yhub
                 # auth. hashi mode keeps the lookup refs already collected.
                 if backend.prompts_values():
                     for env_key in _DOCS_CORE_SECRETS:
                         v = pvault.get("vault_" + env_key.lower())
                         if v is None:
                             v = _password(
-                                f"{env_key} (must match the reused yprovider unit)"
+                                f"{env_key} (must match the reused yhub unit)"
                             )
                         backend.env_secret(
                             answers, env_key, component=core.key, value=str(v)
@@ -2239,6 +2660,9 @@ def _handle_dependency(
         # deploy: create + manage this unit. A rebootstrap pre-fills every
         # prompt below from what is already on disk.
         existing_hosts = recover.recover_hosts(meta.app, env, provider.key)
+        if meta.app == "docs" and provider.key == "yhub" and not existing_hosts:
+            # An upgrade from Docs 5: yhub takes the place of the yprovider unit.
+            existing_hosts = recover.recover_hosts(meta.app, env, "yprovider")
         hosts = _ask_hosts(dep.on, default=existing_hosts)
         egress_hosts = valkey_enabled = None
         if meta.app == "meet" and provider.key == "livekit":
@@ -2328,8 +2752,10 @@ def _handle_dependency(
             _ask_messages_provider(
                 provider.key, answers, backend, hosts, core.key, meta.app, env, pvars
             )
-        if meta.app == "docs" and provider.key == "yprovider":
-            _ask_docs_yprovider(answers, backend, hosts, core.key, meta.app, env)
+        env_answers = answers
+        if meta.app == "docs" and provider.key == "yhub":
+            own = _ask_docs_yhub(answers, backend, hosts, core.key, meta.app, env)
+            env_answers = {**answers, **own}
         if meta.app == "meet" and provider.key == "livekit":
             _lk_domain = recover.recover(meta.app, env, provider.key).get("DOMAIN", "")
             _ensure_meet_domain(answers, Recovered(_lk_domain) if _lk_domain else "")
@@ -2338,6 +2764,14 @@ def _handle_dependency(
         elif meta.app == "meet" and provider.key == "egress":
             _standalone_egress(meta, pvars, backend, env)
         writer.apply_component_vars(pvars, meta, provider, answers)
+        writer.apply_env_render(
+            pvars,
+            meta.app,
+            provider.key,
+            env_answers,
+            f"# added by st-cli {__version__}",
+        )
+        writer.apply_secret_files(pvars, meta, provider, env_answers)
         writer.expand_var_markers(pvars, backend)
         pvars[writer.cadvisor_var(meta.app)] = _ask_cadvisor(
             dep.on, _cadvisor_default(meta.app, env, provider.key)
@@ -2735,7 +3169,9 @@ def bootstrap(
             if app == "drive" and seed:
                 _seed_drive_legacy_s3(seed, tree.load_vars(app, env, core.key))
             core_hosts_default = (
-                recover.recover_hosts(app, env, core.key) if recoverable else []
+                recover.recover_hosts(app, env, core.key, group=core.app_name)
+                if recoverable
+                else []
             )
             core_hosts = _ask_hosts(core.key, default=core_hosts_default)  # hosts first
             # Optional worker IPs: blank ⇒ workers co-locate on the core hosts (the
@@ -2762,8 +3198,9 @@ def bootstrap(
             else:
                 answers = _ask_core(meta, backend, seed)
             # a fresh run has no core hosts file on disk yet, so stash the hosts
-            # so dependency hooks can detect co-location (_docs_yprovider_endpoints).
+            # so dependency hooks can detect co-location (_docs_yhub_endpoints).
             answers["_core_hosts"] = core_hosts
+            answers["_worker_hosts"] = worker_hosts
             core_cadvisor = _ask_cadvisor(
                 core.key,
                 True if override_core else _cadvisor_default(app, env, core.key),

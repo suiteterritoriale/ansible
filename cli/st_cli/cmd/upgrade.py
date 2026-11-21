@@ -10,8 +10,19 @@ import shutil
 
 import st_cli
 
-from ..core import appmeta, manifest, paths, pin, ui, upgrades, upstream, writer
+from ..core import (
+    appmeta,
+    drift,
+    manifest,
+    paths,
+    pin,
+    ui,
+    upgrades,
+    upstream,
+    writer,
+)
 from ..core.errors import StCliError
+from ..core.models import MODE_EXTERNAL
 from . import bootstrap as bootstrap_mod
 from .bootstrap import ReplayAction
 
@@ -38,6 +49,19 @@ def _clean_scaffolding() -> None:
         if d.exists():
             shutil.rmtree(d)
             ui.info(f"Cleaned {d}.")
+
+
+def _dependency_gaps() -> list[str]:
+    """The required dependencies that no unit of the committed manifest meets."""
+    m = manifest.load_manifest()
+    pairs = sorted({(u.app, u.env) for u in m.units if u.mode != MODE_EXTERNAL})
+    gaps: list[str] = []
+    for app, env in pairs:
+        try:
+            gaps += drift.dependency_gaps(app, env, m)
+        except StCliError:
+            continue
+    return gaps
 
 
 def upgrade() -> None:
@@ -163,12 +187,17 @@ def upgrade() -> None:
         ui.warn("Manual steps for this upgrade:")
         for app, env, version, text in manual_steps:
             ui.warn(f"  {app}/{env} {version}: {text}")
+    gaps = _dependency_gaps()
+    for gap in gaps:
+        ui.warn(f"{gap} `st-cli deploy` refuses until then.")
     # A failed replay leaves its unit flagged, and `st-cli deploy` refuses a
     # flagged unit once the pin is realigned. Do not tell the operator to deploy.
     if failed:
         ui.warn("These units stay flagged — fix the error above, then re-run upgrade:")
         for unit in failed:
             ui.warn(f"  {unit}")
+    elif (changed or replayed) and gaps:
+        ui.success("upgrade complete. Do not deploy the apps named above yet.")
     elif changed or replayed:
         ui.success(
             "upgrade complete — run `st-cli deploy <app> <env>` to roll the new tags."

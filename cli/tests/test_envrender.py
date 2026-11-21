@@ -265,35 +265,40 @@ def test_render_docs_backend_references_public_host_and_collaboration_urls():
         "docs",
         {
             "OIDC_REDIRECT_ALLOWED_HOSTS": '["https://{{ st_docs_public_host }}"]',
-            "COLLABORATION_WS_URL": "wss://{{ st_docs_public_host }}/collaboration/ws/",
-            "COLLABORATION_API_URL": (
-                "https://{{ st_docs_public_host }}/collaboration/api/"
+            "COLLABORATION_WS_URL": (
+                "wss://{{ st_docs_public_host }}/collaboration/ws/v1/docs"
             ),
-            "COLLABORATION_SERVER_SECRET": "{{ vault_collaboration_server_secret }}",
-            "Y_PROVIDER_API_BASE_URL": "http://10.0.0.9:50601/api/",
+            "YHUB_API_BASE_URL": "http://10.0.0.9:50601",
+            "Y_PROVIDER_API_BASE_URL": "http://y-provider:4444/api/",
             "Y_PROVIDER_API_KEY": "{{ vault_y_provider_api_key }}",
+            # Docs 6 ignores these keys: the template must not render them
+            "COLLABORATION_API_URL": "https://x/collaboration/api/",
+            "COLLABORATION_SERVER_SECRET": "{{ vault_collaboration_server_secret }}",
+            "JWT_PRIVATE_KEY": "{{ vault_jwt_private_key }}",
         },
     )
     body = blobs["st_docs_backend_env"]
     assert 'OIDC_REDIRECT_ALLOWED_HOSTS=["https://{{ st_docs_public_host }}"]' in body
     assert (
-        "COLLABORATION_WS_URL=wss://{{ st_docs_public_host }}/collaboration/ws/" in body
+        "COLLABORATION_WS_URL=wss://{{ st_docs_public_host }}"
+        "/collaboration/ws/v1/docs\n" in body
     )
-    assert (
-        "COLLABORATION_API_URL=https://{{ st_docs_public_host }}/collaboration/api/"
-        in body
-    )
-    assert "COLLABORATION_SERVER_SECRET={{ vault_collaboration_server_secret }}" in body
-    assert "Y_PROVIDER_API_BASE_URL=http://10.0.0.9:50601/api/" in body
+    assert "YHUB_API_BASE_URL=http://10.0.0.9:50601\n" in body
+    assert "# Backend-only (the browser never calls it)" in body
+    assert "Y_PROVIDER_API_BASE_URL=http://y-provider:4444/api/\n" in body
     assert "Y_PROVIDER_API_KEY={{ vault_y_provider_api_key }}" in body
+    assert "COLLABORATION_API_URL" not in body
+    assert "COLLABORATION_SERVER_SECRET" not in body
+    assert "JWT_PRIVATE_KEY" not in body  # a secret file, not an env line
 
 
 def test_render_docs_backend_optional_keys_absent_when_unset():
-    """Y_PROVIDER_API_BASE_URL and the frontend theme keys are absent from the
-    rendered body when not set in answers."""
+    """YHUB_API_BASE_URL, Y_PROVIDER_API_BASE_URL and the frontend theme keys are
+    absent from the rendered body when not set in answers."""
     body = envrender.render_env("docs", "docs", {"DOMAIN": "docs.example.org"})[
         "st_docs_backend_env"
     ]
+    assert "YHUB_API_BASE_URL" not in body
     assert "Y_PROVIDER_API_BASE_URL" not in body
     assert "FRONTEND_THEME" not in body
     assert "FRONTEND_CSS_URL" not in body
@@ -310,9 +315,9 @@ def test_render_docs_backend_theme_customization():
     assert "FRONTEND_CSS_URL=https://cdn/theme.css" in body
 
 
-def test_render_docs_caddy_env_s3_and_yprovider_values():
-    """docs' Caddy ingress proxies /media/* to S3 via CADDY_S3_* and
-    /collaboration/* to the y-provider upstreams via CADDY_YPROVIDER_ENDPOINTS."""
+def test_render_docs_caddy_env_s3_and_yhub_values():
+    """docs' Caddy ingress proxies /media/* to S3 via CADDY_S3_* and the
+    /collaboration/ routes to the yhub upstreams via CADDY_YHUB_ENDPOINTS."""
     blobs = envrender.render_env(
         "docs",
         "docs",
@@ -320,14 +325,106 @@ def test_render_docs_caddy_env_s3_and_yprovider_values():
             "CADDY_S3_PROTOCOL": "https",
             "CADDY_S3_HOST": "minio.example.org:9000",
             "CADDY_S3_BUCKET": "docs-media",
-            "CADDY_YPROVIDER_ENDPOINTS": "10.0.0.9:50601 10.0.0.10:50601",
+            "CADDY_YHUB_ENDPOINTS": "10.0.0.9:50601 10.0.0.10:50601",
         },
     )
     body = blobs["st_docs_caddy_env"]
     assert "CADDY_S3_PROTOCOL=https" in body
     assert "CADDY_S3_HOST=minio.example.org:9000" in body
     assert "CADDY_S3_BUCKET=docs-media" in body
-    assert "CADDY_YPROVIDER_ENDPOINTS=10.0.0.9:50601 10.0.0.10:50601" in body
+    assert "CADDY_YHUB_ENDPOINTS=10.0.0.9:50601 10.0.0.10:50601" in body
+    assert "CADDY_YPROVIDER_ENDPOINTS" not in body
+
+
+def test_render_docs_yprovider_env_is_the_converter_env():
+    """The converter reads the public backend URL and origin, and neither the
+    server secret nor the API key."""
+    blobs = envrender.render_env(
+        "docs",
+        "docs",
+        {
+            "COLLABORATION_BACKEND_BASE_URL": "https://{{ st_docs_public_host }}",
+            "COLLABORATION_SERVER_ORIGIN": "https://{{ st_docs_public_host }}",
+            "Y_PROVIDER_API_KEY": "{{ vault_y_provider_api_key }}",
+        },
+    )
+    assert blobs["st_docs_yprovider_env"] == (
+        "COLLABORATION_BACKEND_BASE_URL=https://{{ st_docs_public_host }}\n"
+        "COLLABORATION_SERVER_ORIGIN=https://{{ st_docs_public_host }}\n"
+        "COLLABORATION_LOGGING=true\n"
+    )
+
+
+_YHUB_ANSWERS = {
+    "REDIS": "{{ vault_redis }}",
+    "POSTGRES": "{{ vault_postgres }}",
+    "COLLABORATION_BACKEND_BASE_URL": "https://{{ st_docs_public_host }}",
+    "COLLABORATION_SERVER_ORIGIN": "https://{{ st_docs_public_host }}",
+    "Y_PROVIDER_API_KEY": "{{ vault_y_provider_api_key }}",
+    "YHUB_JWT_PRIVATE_KEY": "{{ vault_yhub_jwt_private_key }}",
+}
+
+
+def test_render_docs_yhub_env_without_migration():
+    body = envrender.render_env(
+        "docs", "yhub", {**_YHUB_ANSWERS, "SOFT_MIGRATION": "false"}
+    )["st_docs_yhub_env"]
+    assert body == (
+        "REDIS={{ vault_redis }}\n"
+        "POSTGRES={{ vault_postgres }}\n"
+        "COLLABORATION_BACKEND_BASE_URL=https://{{ st_docs_public_host }}\n"
+        "COLLABORATION_SERVER_ORIGIN=https://{{ st_docs_public_host }}\n"
+        "Y_PROVIDER_API_KEY={{ vault_y_provider_api_key }}\n"
+        "SOFT_MIGRATION=false\n"
+    )
+
+
+def test_render_docs_yhub_env_always_renders_soft_migration():
+    """An absent answer renders `false`, so a merge can flip a committed `true`."""
+    body = envrender.render_env("docs", "yhub", _YHUB_ANSWERS)["st_docs_yhub_env"]
+    assert "SOFT_MIGRATION=false\n" in body
+
+
+def test_render_docs_yhub_env_with_migration():
+    legacy = {
+        "SOFT_MIGRATION": "true",
+        "LEGACY_S3_ENDPOINT_URL": "https://s3.example.org",
+        "LEGACY_S3_ACCESS_KEY_ID": "ro-key",
+        "LEGACY_S3_SECRET_ACCESS_KEY": "{{ vault_legacy_s3_secret_access_key }}",
+        "LEGACY_S3_BUCKET_NAME": "docs-media",
+    }
+    body = envrender.render_env("docs", "yhub", {**_YHUB_ANSWERS, **legacy})[
+        "st_docs_yhub_env"
+    ]
+    assert "SOFT_MIGRATION=true\n" in body
+    assert "LEGACY_S3_ENDPOINT_URL=https://s3.example.org\n" in body
+    assert "LEGACY_S3_ACCESS_KEY_ID=ro-key\n" in body
+    assert (
+        "LEGACY_S3_SECRET_ACCESS_KEY={{ vault_legacy_s3_secret_access_key }}\n" in body
+    )
+    assert "LEGACY_S3_BUCKET_NAME=docs-media\n" in body
+    assert "LEGACY_S3_REGION_NAME" not in body  # optional: no line when unset
+    assert "YHUB_JWT_PRIVATE_KEY" not in body  # a secret file, not an env line
+
+    with_region = envrender.render_env(
+        "docs",
+        "yhub",
+        {**_YHUB_ANSWERS, **legacy, "LEGACY_S3_REGION_NAME": "fr-par"},
+    )["st_docs_yhub_env"]
+    assert "LEGACY_S3_REGION_NAME=fr-par\n" in with_region
+
+
+def test_render_docs_yhub_env_ignores_legacy_answers_when_the_gate_is_off():
+    body = envrender.render_env(
+        "docs",
+        "yhub",
+        {
+            **_YHUB_ANSWERS,
+            "SOFT_MIGRATION": "false",
+            "LEGACY_S3_BUCKET_NAME": "docs-media",
+        },
+    )["st_docs_yhub_env"]
+    assert "LEGACY_S3" not in body
 
 
 def test_oidc_issuer_per_provider():

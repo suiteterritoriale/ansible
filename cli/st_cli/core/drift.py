@@ -12,6 +12,7 @@ from . import (
     envrender,
     generate,
     manifest,
+    paths,
     recover,
     runner,
     tree,
@@ -19,7 +20,14 @@ from . import (
     upgrades,
 )
 from .errors import StCliError
-from .models import MODE_EXTERNAL, StCliManifest, UnitState, UpgradeNeed
+from .models import (
+    DEP_LABEL_EXTERNAL,
+    DEP_LABEL_NOW,
+    MODE_EXTERNAL,
+    StCliManifest,
+    UnitState,
+    UpgradeNeed,
+)
 
 
 def _load_units(
@@ -71,6 +79,86 @@ def check_app(app: str, env: str, components: list[str] | None = None) -> list[s
         return [f"{scope}: all units are external — nothing to rebootstrap-check."]
 
     return [format_need(app, env, n) for n in pending_needs(app, env, components, m)]
+
+
+def _is_empty(value: object) -> bool:
+    """True for a missing value, whitespace, `""` or `''`."""
+    return str(value or "").strip() in ("", '""', "''")
+
+
+def dependency_gaps(
+    app: str,
+    env: str,
+    m: StCliManifest | None = None,
+    components: list[str] | None = None,
+) -> list[str]:
+    """Return one message per required dependency that is not set up.
+
+    A required dependency is set up when its unit is in `.st-cli.yml` (managed
+    or external) and, when the core is committed, the core blobs hold a value for
+    each of its `wired_keys`. An empty list when the app has no unit here. A run
+    that targets only the dependency itself (`components`) rolls out nothing that
+    needs it, so that dependency is not checked.
+    """
+    meta = appmeta.load_app(app)
+    required = [d for d in meta.dependencies if d.required]
+    if not required:
+        return []
+    m, units = _load_units(app, env, None, m)
+    if not units:
+        return []
+    core = meta.core()
+    committed = (
+        recover.recover(app, env, core.key)
+        if paths.vars_path(app, env, core.key).exists()
+        else None
+    )
+    present = {u.component for u in units}
+    out: list[str] = []
+    for dep in required:
+        if components and set(components) <= {dep.on}:
+            continue
+        answer = f'answer "{DEP_LABEL_NOW}" (or "{DEP_LABEL_EXTERNAL}") for {dep.on}'
+        if dep.on not in present:
+            if committed is not None and all(
+                k not in committed for k in dep.wired_keys
+            ):
+                out.append(
+                    f"{app}/{env}: this tree is not upgraded and {dep.on} is "
+                    f"required. Run `st-cli upgrade` and {answer} in that run."
+                )
+            else:
+                out.append(
+                    f"{app}/{env}: {dep.on} is required and has no unit. Run "
+                    f"`st-cli bootstrap {app} {env}` and {answer}."
+                )
+        elif committed is not None and any(
+            _is_empty(committed.get(k)) for k in dep.wired_keys
+        ):
+            out.append(
+                f"{app}/{env}: the {core.key} unit does not name {dep.on} yet "
+                f"({' or '.join(dep.wired_keys)} is empty). Run "
+                f"`st-cli bootstrap {app} {env}`."
+            )
+    return out
+
+
+def require_dependencies(
+    app: str,
+    env: str,
+    m: StCliManifest | None = None,
+    components: list[str] | None = None,
+) -> None:
+    """Raise `StCliError` when a required dependency is not set up.
+
+    Call before any ssh or network side effect.
+    """
+    gaps = dependency_gaps(app, env, m, components)
+    if gaps:
+        raise StCliError(
+            "Required dependency missing, deploy refused:\n"
+            + "\n".join(f"  - {g}" for g in gaps)
+        )
 
 
 def format_need(app: str, env: str, need: UpgradeNeed) -> str:
@@ -174,5 +262,6 @@ def preflight_all(
         ui.info(f"Checking {a}/{e} …")
         scoped = components if (app and env) else None
         warnings += check_app(a, e, scoped)
+        warnings += dependency_gaps(a, e, m)
         warnings += env_key_report(a, e, scoped)
     return warnings

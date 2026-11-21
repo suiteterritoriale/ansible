@@ -61,3 +61,27 @@ flags:
     warnings:
       - "Remove the CELERY_BROKER_URL line from st_transfers_backend_env in transfers/<env>/transfers/vars.yml."
       - "Point the broker at a Redis 7 or later with eviction disabled (maxmemory-policy noeviction)."
+  - version: "next"
+    apps: [docs]
+    components: [docs]
+    new_components: [yhub]
+    full_replay: true
+    reason: "docs 6 replaces the yprovider unit with the yhub unit. Prepare an empty PostgreSQL database and a durable Redis for yhub before you answer. The replay writes the yhub unit, the RSA keys and the new core keys."
+    warnings:
+      - "With hashi_vault: create JWT_PRIVATE_KEY and YHUB_JWT_PRIVATE_KEY in OpenBao before the deploy."
+      - "st-cli generate-keypairs docs <env> mints the two RSA keys."
+      - "With hashi_vault: create POSTGRES, REDIS and, for the data migration, LEGACY_S3_SECRET_ACCESS_KEY in OpenBao before the deploy."
+      - "Create the yhub database before the deploy."
+      - "Give yhub its own durable Redis 6.2+ or Valkey (AOF on, no eviction of keys without expiry), not the Django cache."
+      - "Enable bucket versioning on the media bucket before the deploy and keep it on."
+      - "Keep every <document-id>/file object in the media bucket."
+      - "Give the LEGACY_S3_* credentials the rights s3:ListBucket, s3:GetObject, s3:ListBucketVersions and s3:GetObjectVersion."
+      - "Remove the COLLABORATION_SERVER_SECRET and COLLABORATION_API_URL lines from st_docs_backend_env in docs/<env>/docs/vars.yml."
+      - "With ansible-vault: remove vault_collaboration_server_secret with st-cli secrets docs <env> -c docs."
+      - "Remove the CADDY_YPROVIDER_ENDPOINTS line from st_docs_caddy_env in docs/<env>/docs/vars.yml."
+      - "Open port 50601 from the core hosts and the workers hosts to the yhub hosts."
+      - "After st-cli deploy docs <env>, run st-cli oneoff docs <env> -- python manage.py migrate_documents. It works only while SOFT_MIGRATION=true: yhub answers 503 when it is off."
+      - "Then run st-cli oneoff docs <env> -- python manage.py migrate_documents --retry-failed until no document fails."
+      - "After the migration, set SOFT_MIGRATION=false in st_docs_yhub_env, then run st-cli deploy docs <env> -c yhub."
+      - "After the migration, remove the LEGACY_S3_* lines from st_docs_yhub_env and, with ansible-vault, vault_legacy_s3_secret_access_key."
+      - "After the first successful deploy, delete docs/<env>/yprovider/ and the yprovider unit in .st-cli.yml."

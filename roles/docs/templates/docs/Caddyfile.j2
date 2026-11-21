@@ -54,16 +54,27 @@
 		}
 	}
 
-	# Collaboration server (mirrors the upstream ingress /collaboration/ws/ +
-	# /collaboration/api/ routes). CADDY_YPROVIDER_ENDPOINTS is a REQUIRED,
-	# space-separated host:port list from the caddy_env file — caddy substitutes
-	# {$VAR} at parse time, so the list expands into multiple upstreams.
-	# Room-hash load balancing pins one document to one y-provider replica, since
-	# the Yjs document state lives in that replica's memory.
+	# Collaboration server (yhub). CADDY_YHUB_ENDPOINTS is a REQUIRED,
+	# space-separated host:port list from the caddy_env file. Any replica serves
+	# any document, so there is no room pinning.
 	handle /collaboration/* {
-		reverse_proxy {$CADDY_YPROVIDER_ENDPOINTS} {
-			lb_policy query room
-			header_up X-Forwarded-Proto https
+		@yhub_public path_regexp ^/collaboration/(ws|ydoc|rollback|changeset|activity|jwks)/
+		handle @yhub_public {
+			reverse_proxy {$CADDY_YHUB_ENDPOINTS} {
+				header_up X-Forwarded-Proto https
+				transport http {
+					dial_timeout 2s
+				}
+				health_uri /collaboration/ready/v1
+				health_interval 10s
+				health_timeout 3s
+				lb_try_duration 5s
+				fail_duration 10s
+			}
+		}
+		# The other yhub routes are for the backend only.
+		handle {
+			respond 404
 		}
 	}
 

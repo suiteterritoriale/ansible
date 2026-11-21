@@ -2,7 +2,7 @@
 
 ## 1. What it is
 
-`st-cli` (package `st-cli`, version `0.4.0`) bootstraps and operates
+`st-cli` (package `st-cli`, version `0.7.0`) bootstraps and operates
 `suitenumerique.st` Ansible deployments. It runs **from a deployment repo**
 (its CWD), never from this collection repo. It writes a committed config tree,
 generates throwaway Ansible scaffolding, and shells out to `ansible-playbook`,
@@ -46,17 +46,21 @@ Committed by the operator, per `(app, env, component)`:
   every unit that `core/upgrades.needed` flags (`ReplayAction.SILENT`, or
   `MODIFY` when a flag is full_replay), prints the manual steps, and cleans
   `.st-cli/`. A crashed run resumes on a plain re-run.
-- **deploy** (`cmd/deploy.py`): pin and flag gate → `sshuser.ensure_ssh_user`
+- **deploy** (`cmd/deploy.py`): pin, flag and required-dependency gate → `sshuser.ensure_ssh_user`
   → `drift.preflight` (generate + galaxy install) → `runner.play` per unit,
   `serial: 1`, two phases (`base` as root, `deploy` as the app user).
-- **doctor** (`core/drift.py`): offline and warn-only. Lists pending flags and
+- **doctor** (`core/drift.py`): offline and warn-only. Lists pending flags, missing required dependencies and
   an env-key diff between a fresh render and the committed blob.
 - **restart / ps / logs / oneoff / reset** (`cmd/remote.py`): direct `ssh`.
   `-H/--host` is the inventory alias. They never block on versions. `reset`
   tears down the unit over ssh, then redeploys it through `generate`,
   `runner.galaxy_install` and `runner.play`, limited to the selected host.
-- **generate-keypairs** (`cmd/generate_keypairs.py`, file-scanner only): local
-  Ed25519 keygen plus a wiring summary, writing nothing anywhere. Default mode
+- **generate-keypairs** (`cmd/generate_keypairs.py`, file-scanner and docs): local
+  keygen plus a wiring summary, writing nothing anywhere. `docs` mode mints the
+  two RSA keys (`JWT_PRIVATE_KEY` of the backend, `YHUB_JWT_PRIVATE_KEY` of yhub)
+  as PKCS#8 PEM and prints them, as vault blocks or as OpenBao lookup terms.
+  `bootstrap` generates both keys itself under ansible-vault, so this mode is
+  for the hashi_vault backend and for key rotation. File-scanner default mode
   mints caller keypairs (issuer-name loop) and prints the `JWT_ISSUER_KEYS`
   value merged with the bootstrapped unit's, plus each caller's private key.
   `-s/--signing-key` mints the webhook signing seed (`JWT_SIGNING_KEY`) and the
@@ -101,6 +105,34 @@ rotates a secret.** `st-cli upgrade` relies on it. Rules for every prompt:
   direct keeps the old lines and warns which ones to remove.
 - **Domain-derived keys** (`_ask_core`, the `derived` dict) are recomputed
   only when the domain changed; otherwise `setdefault` keeps hand edits.
+- **A default from another key is a suggestion, not a recovered value.** The
+  `LEGACY_S3_*` defaults come from `AWS_S3_*` on the first run only, as plain
+  strings, so the silent replay stops there once. A committed `SOFT_MIGRATION=true`
+  turns them off: a missing optional line then means "cleared on purpose".
+- **A hand edit of a derived value stays.** The origin keys keep a committed
+  value per blob (core converter, yhub). `YHUB_API_BASE_URL` stays on an
+  unchanged topology, whatever its value (a warning names a URL of a core or
+  workers host). When the hosts changed, it stays if the new topology accepts it
+  (`_valid_yhub_urls`), is recomputed if it only fits the old hosts (rebuilt from
+  the committed `CADDY_YHUB_ENDPOINTS`), and else stays with a warning.
+  `CADDY_YHUB_ENDPOINTS` is the exception: the hosts files derive it on every
+  replay, so a hand-added entry does not stay. To add a yhub host, run
+  `bootstrap docs <env> -c yhub` with the new hosts, then `bootstrap docs <env>`.
+- **One env blob serves every host of a unit.** A rootless container cannot reach
+  the address of its own host: it uses `host.containers.internal`.
+  `CADDY_YHUB_ENDPOINTS` lists the alias first when a yhub host is a core host,
+  then each yhub host by address, except the only core host (caddy drops the
+  entries that fail its health check). `YHUB_API_BASE_URL` never defaults to a
+  core or workers host. An IPv6 host gets brackets.
+- **A required dependency blocks deploy.** `dependencies[].required` (docs →
+  yhub) with `wired_keys`: `deploy` and `reset` raise until the unit exists (or an
+  external one is recorded) and the core blobs hold the keys. Each message names
+  the one command that clears it: `st-cli bootstrap docs <env>` (answer yes or
+  external for yhub), or `st-cli upgrade` on a v5 tree. `upgrade` and
+  `doctor` print the gap. Bootstrap warns when the operator answers "later".
+- **A secret file is a secret like any other.** A key listed in a component's
+  `secret_files` goes through `_ask_secret`, never into an env template.
+  `core/recover.py` reads it back from the list variable, so a replay keeps it.
 - **A flagged dependency provider gets no reuse select.** `_handle_dependency`
   replays it directly, because Reuse would move the stamp without a replay
   and clear the flag silently.
@@ -119,7 +151,13 @@ When you add or change a prompt:
 
 Per-app entry points: `_ask_core` (Django apps: meet, drive, messages, docs,
 conversations), `_ask_keycloak`, `_ask_projects`. `_handle_dependency` runs
-the provider questionnaires. Keycloak is not a Django app. Messages uses
+the provider questionnaires. For docs, `_ask_core` owns `Y_PROVIDER_API_KEY`
+and the backend RSA key, and `_ask_docs_yhub` runs for the `yhub` provider: it
+mirrors `Y_PROVIDER_API_KEY`, asks `POSTGRES` and `REDIS`, the `SOFT_MIGRATION`
+gate with the `LEGACY_S3_*` block, and the yhub RSA key. The `yprovider` unit of
+Docs 5 stays in the manifest as a deprecated entry (like messages' `mta-in`): it
+is not a dependency target, so bootstrap refuses `-c yprovider`, and its play
+runs the legacy cleanup of the role only. Keycloak is not a Django app. Messages uses
 `STORAGE_MESSAGE_*`, never `AWS_S3_*`. Conversations reads `DB_*` only
 (`_DISCRETE_DB_APPS`): no DB-mode select, `DATABASE_URL` is never written.
 
@@ -195,9 +233,11 @@ every subcommand and never blocks:
 The pull makes the installed CLI newer than the pin. The `st-cli upgrade`
 hint then appears on the next command.
 
-`deploy` blocks in two cases only, before any ssh or network side effect:
-installed < pin, or a pending flag whose version is at or below the pin (the
-replay is missing or crashed; the fix is `st-cli upgrade`). Every other pending
+`deploy` blocks in three cases only, before any ssh or network side effect:
+installed < pin, a pending flag whose version is at or below the pin (the
+replay is missing or crashed; the fix is `st-cli upgrade`), or a required
+dependency that is not set up (`drift.require_dependencies`; a run that targets
+only that dependency passes). Every other pending
 flag is a warning. There is no override flag for this gate. `upgrade` moves the pin. `docker pull` moves the installed
 CLI. Nothing else writes the pin. `ST_CLI_NO_UPSTREAM_CHECK` disables the
 global callback and the upstream gate of `st-cli upgrade`.
@@ -206,15 +246,15 @@ global callback and the upstream gate of `st-cli upgrade`.
 
 | Module | Role |
 |---|---|
-| `core/appmeta.py` | Loads `resources/apps/<app>.yml`: components, vars, `env_render`, `requirements[]` (the app-tailored pre-bootstrap checklist; mandatory, no generic fallback), `dependencies[]` with `shared[]` rules. |
-| `core/recover.py` | Inverse of render: rebuilds `answers` from a committed unit. Best-effort, app-agnostic, values verbatim. `parse_bool` tolerantly parses a YAML bool or a yes/no-shaped string. |
+| `core/appmeta.py` | Loads `resources/apps/<app>.yml`: components, vars, `env_render`, `secret_files` (optional per component: `{var, keys}`, the list variable of `{env, content}` items that the role writes as secret files; `AppMeta.secret_files_spec`), `requirements[]` (the app-tailored pre-bootstrap checklist; mandatory, no generic fallback), `dependencies[]` with `shared[]` rules, and `required` / `wired_keys` for a dependency that deploy needs. |
+| `core/recover.py` | Inverse of render (`recover_hosts(group=...)` returns one inventory group, so a core replay does not take its workers hosts; an absent group falls back to every host but the workers group): rebuilds `answers` from a committed unit: the env blobs, the `{PLACEHOLDER}` component vars, and the declared `secret_files` items. Best-effort, app-agnostic, values verbatim. `parse_bool` tolerantly parses a YAML bool or a yes/no-shaped string. |
 | `core/envblob.py` | Text merge of dotenv blobs. Keeps existing lines in place, appends new keys, never deletes. `merge(x, x, m) == x` when `x` ends with one newline. |
 | `core/envrender.py` | Renders env blobs from `templates/env/*.j2`. Missing keys render as `""`. `oidc_endpoints`. |
-| `core/writer.py` | Writes `vars.yml` / `vault.yml` / hosts. Merges on rebootstrap, skips an unchanged vault write. |
+| `core/writer.py` | Writes `vars.yml` / `vault.yml` / hosts. Merges on rebootstrap, skips an unchanged vault write, writes a multi-line vault value (a PEM) as a literal block. `apply_env_render` renders and merges the env blobs of any component (core or provider unit). `apply_secret_files` adds or updates the `{env, content}` items of the declared list variable, and never touches an item with `src` or an item of the operator. |
 | `core/prompts.py` | questionary primitives, `Recovered`, `silent_replay()`, `suspend_silent()`. `_password` never auto-accepts. |
 | `core/secretbackend.py` | `AnsibleVaultBackend` (values in `vault.yml`) and `HashiVaultBackend` (reference-only lookup refs, mints nothing). |
 | `core/upgrades.py` | `needed`, `newest_per_unit`, `pending_warnings`, `new_component_offers`, `parse_version`. |
-| `core/drift.py` | `pending_needs`, `check_app`, `format_need`, env-key diff, `preflight`. |
+| `core/drift.py` | `pending_needs`, `check_app`, `format_need`, env-key diff, `dependency_gaps` and `require_dependencies` (required dependencies), `preflight`. |
 | `core/pin.py` | `PinState`, `compare(m)`, `require_not_older(m, retry_hint)` raises `StCliError` when the CLI is older than the pin. |
 | `core/upstream.py` | Upstream tag lookup, `is_behind`, `install_hint`, `maybe_warn_upgrade`. |
 | `core/manifest.py` | `.st-cli.yml` I/O: pins, units, secret backend, `ssh_user`. |
@@ -223,7 +263,7 @@ global callback and the upstream gate of `st-cli upgrade`.
 | `core/runner.py` | `galaxy_install`, `play` subprocess wrappers. |
 | `core/vault.py` | `ansible-vault` wrappers and `.vault-pass` handling. |
 | `core/secrets.py` | `gen_secret`, `gen_token`, `gen_password` for `_ask_secret(gen=...)`. |
-| `core/keypairs.py` | Pure-python Ed25519 keygen (RFC 8032 derivation, no crypto dependency): `generate_keypair() -> (private, public)`, unpadded base64url, the private key IS the 32-byte seed. Used by `cmd/generate_keypairs.py` only. |
+| `core/keypairs.py` | Pure-python keygen, no crypto dependency. Ed25519 (RFC 8032 derivation): `generate_keypair() -> (private, public)`, unpadded base64url, the private key IS the 32-byte seed. RSA: `generate_rsa_private_key_pem(bits=2048) -> str`, unencrypted PKCS#8 PEM (yhub loads it with `importPKCS8`). `cmd/generate_keypairs.py` uses both. `bootstrap` uses the RSA one as the `gen` of the two docs keys. |
 | `core/paths.py` | All path computation, anchored at `Path.cwd()`. `SECRET_FILE_MODE` is the mode of a secret file. |
 | `core/ui.py` | All console output. `warn`/`error` go to stderr. No bare `print`. `value()` prints a raw value copy-paste safe (no markup, `soft_wrap`). |
 | `core/sshuser.py` | Once-per-process ssh user guard. `ST_CLI_SSH_USER` overrides. |
@@ -260,7 +300,8 @@ ruff-clean. `pyproject.toml` commits the rule set under `[tool.ruff.lint]`.
 Tests are offline. `cryptography` is a test-only dependency: the differential
 Ed25519 check in `test_keypairs.py` imports it hard, never a silent skip. Each
 bootstrap test spawns `ansible-vault`, so the full suite takes minutes without `-n`. One `test_<module>.py` per module.
-`tests/conftest.py` provides the `repo` tmp-cwd fixture and disables the
-upstream check. `tests/helpers.py` provides the seeders, the first-run script
+`tests/conftest.py` provides the `repo` tmp-cwd fixture, disables the
+upstream check, and replaces the RSA generator with two fixed PEMs (a module
+marked `real_rsa`, like `test_keypairs.py`, keeps the real one). `tests/helpers.py` provides the seeders, the first-run script
 builders, `script_questionary` (strict: an unscripted prompt fails) and
 `accept_defaults` (Enter-through: use `sq.asked` to prove a prompt did not fire).

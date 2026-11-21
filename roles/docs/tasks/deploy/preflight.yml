@@ -1,0 +1,49 @@
+---
+# _docs_value matches a value that is not empty, blank, "" or ''.
+- name: "Check the Docs 6 caddy settings."
+  when: st_docs_enabled and st_docs_caddy_env_template == 'docs/caddy_env.j2'
+  vars:
+    _docs_value: |-
+      (?![ \t]*(?:"\s*"|'\s*')?[ \t]*\r?$)\S
+  ansible.builtin.assert:
+    that: st_docs_caddy_env is search('^[ \t]*CADDY_YHUB_ENDPOINTS=' ~ _docs_value, multiline=True)
+    quiet: true
+    fail_msg: "st_docs_caddy_env must set CADDY_YHUB_ENDPOINTS. See docs/06-docs/04-upgrade-v5-to-v6.md."
+
+- name: "Check the Docs 6 backend settings."
+  when: st_docs_enabled and st_docs_backend_env_template == 'docs/backend_env.j2'
+  vars:
+    _docs_value: |-
+      (?![ \t]*(?:"\s*"|'\s*')?[ \t]*\r?$)\S
+  ansible.builtin.assert:
+    that:
+      - st_docs_backend_env is search('^[ \t]*YHUB_API_BASE_URL=' ~ _docs_value, multiline=True)
+      - >-
+        st_docs_backend_secret_files | selectattr('env', 'defined') | selectattr('env', 'equalto', 'JWT_PRIVATE_KEY') | list | length > 0
+        or st_docs_backend_env is search('^[ \t]*JWT_PRIVATE_KEY(_FILE)?=' ~ _docs_value, multiline=True)
+    quiet: true
+    fail_msg: >-
+      st_docs_backend_env must set YHUB_API_BASE_URL, and the backend needs JWT_PRIVATE_KEY in
+      st_docs_backend_secret_files. See docs/06-docs/04-upgrade-v5-to-v6.md.
+
+- name: "Check the Docs 6 workers settings."
+  when: st_docs_workers_enabled and st_docs_workers_env_template == 'workers/env.j2'
+  vars:
+    _docs_value: |-
+      (?![ \t]*(?:"\s*"|'\s*')?[ \t]*\r?$)\S
+  ansible.builtin.assert:
+    that: st_docs_workers_env is search('^[ \t]*YHUB_API_BASE_URL=' ~ _docs_value, multiline=True)
+    quiet: true
+    fail_msg: "st_docs_workers_env must set YHUB_API_BASE_URL. See docs/06-docs/04-upgrade-v5-to-v6.md."
+
+- name: "Check the Docs 6 yhub settings."
+  when: st_docs_yhub_enabled and st_docs_yhub_env_template == 'yhub/env.j2'
+  vars:
+    _docs_value: |-
+      (?![ \t]*(?:"\s*"|'\s*')?[ \t]*\r?$)\S
+  ansible.builtin.assert:
+    that:
+      - st_docs_yhub_env is search('^[ \t]*POSTGRES=' ~ _docs_value, multiline=True)
+      - st_docs_yhub_env is search('^[ \t]*REDIS=' ~ _docs_value, multiline=True)
+    quiet: true
+    fail_msg: "st_docs_yhub_env must set POSTGRES and REDIS. See docs/06-docs/04-upgrade-v5-to-v6.md."

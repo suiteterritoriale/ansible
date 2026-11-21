@@ -241,18 +241,19 @@ def test_component_implemented_flag():
     assert appmeta.load_app("meet").core().implemented is True
 
 
-def test_docs_yprovider_dependency():
-    """docs depends on yprovider; the dependency has no shared rules, since its
-    secrets are owned by the docs core and mirrored in at bootstrap."""
+def test_docs_yhub_dependency():
+    """docs depends on yhub; the dependency has no shared rules, since the only
+    shared secret is owned by the docs core and mirrored in at bootstrap. The
+    deprecated yprovider unit is not a dependency target."""
     meta = appmeta.load_app("docs")
-    assert ("docs", "yprovider") in [(d.of, d.on) for d in meta.dependencies]
-    dep = next(d for d in meta.dependencies if d.on == "yprovider")
+    assert [(d.of, d.on) for d in meta.dependencies] == [("docs", "yhub")]
+    dep = meta.dependencies[0]
     assert dep.shared == []
     assert dep.optional is False
 
 
 def test_docs_component_metadata():
-    """docs core is order 20, yprovider is order 10, and workers is order 30."""
+    """docs core is order 20, yhub is order 25, and workers is order 30."""
     meta = appmeta.load_app("docs")
     core = meta.core()
     assert core.key == "docs"
@@ -262,28 +263,88 @@ def test_docs_component_metadata():
     assert core.enabled_var == "st_docs_enabled"
     assert core.deploy_order == 20
 
-    yprovider = meta.component("yprovider")
-    assert yprovider.role == "suitenumerique.st.docs"
-    assert yprovider.dir_var == "st_docs_yprovider_dir"
-    assert yprovider.enabled_var == "st_docs_yprovider_enabled"
-    assert yprovider.deploy_order == 10
-    assert yprovider.is_core is False
-    assert meta.env_render_spec("yprovider") == {}
-    yp_vars = meta.component_vars("yprovider")
-    assert (
-        "COLLABORATION_SERVER_SECRET={COLLABORATION_SERVER_SECRET}"
-        in (yp_vars["st_docs_yprovider_env"])
-    )
-    assert "Y_PROVIDER_API_KEY={Y_PROVIDER_API_KEY}" in yp_vars["st_docs_yprovider_env"]
+    yhub = meta.component("yhub")
+    assert yhub.role == "suitenumerique.st.docs"
+    assert yhub.user == "docs"
+    assert yhub.app_name == "yhub"
+    assert yhub.dir_var == "st_docs_yhub_dir"
+    assert yhub.enabled_var == "st_docs_yhub_enabled"
+    assert yhub.deploy_order == 25
+    assert yhub.is_core is False
+    assert yhub.is_worker is False
+    spec = meta.env_render_spec("yhub")
+    assert spec["env"]["blob_var"] == "st_docs_yhub_env"
+    assert spec["env"]["templates"] == ["docs.yhub.env.j2"]
+    yh_vars = meta.component_vars("yhub")
+    assert yh_vars["st_docs_public_host"] == "{DOMAIN}"
+    assert "ansible_play_hosts_all[0]" in yh_vars["st_docs_yhub_run_init_db"]
 
     orders = {c.key: c.deploy_order for c in meta.components}
-    assert orders["yprovider"] < orders["docs"] < orders["workers"]
+    assert orders["docs"] < orders["yhub"] < orders["workers"]
 
     worker = meta.worker()
     assert worker is not None
     assert worker.implemented is True
     assert worker.role == core.role
     assert worker.user == core.user
+
+
+def test_docs_yprovider_is_a_deprecated_cleanup_unit():
+    """An old .st-cli.yml yprovider unit still resolves: it runs the legacy
+    cleanup of the role first, and bootstrap never offers it."""
+    meta = appmeta.load_app("docs")
+    yprovider = meta.component("yprovider")
+    assert yprovider.role == "suitenumerique.st.docs"
+    assert yprovider.app_name == "yprovider"
+    assert yprovider.dir_var == "st_docs_yprovider_legacy_dir"
+    assert yprovider.enabled_var == "st_docs_yprovider_legacy_cleanup_enabled"
+    assert yprovider.deploy_order == 10
+    assert yprovider.is_core is False
+    assert meta.component_vars("yprovider") == {}
+    assert meta.env_render_spec("yprovider") == {}
+    assert meta.secret_files_spec("yprovider") == {}
+    orders = {c.key: c.deploy_order for c in meta.components}
+    assert orders["yprovider"] < orders["docs"]
+    assert "yprovider" not in {d.on for d in meta.dependencies}
+
+
+def test_secret_files_spec():
+    meta = appmeta.load_app("docs")
+    assert meta.secret_files_spec("docs") == {
+        "var": "st_docs_backend_secret_files",
+        "keys": ["JWT_PRIVATE_KEY"],
+    }
+    assert meta.secret_files_spec("yhub") == {
+        "var": "st_docs_yhub_secret_files",
+        "keys": ["YHUB_JWT_PRIVATE_KEY"],
+    }
+    assert meta.secret_files_spec("workers") == {}
+    # a component of another app declares none
+    assert appmeta.load_app("meet").secret_files_spec("meet") == {}
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"keys": ["A"]},
+        {"var": "st_x_files"},
+        {"var": "st_x_files", "keys": []},
+        {"var": "st_x_files", "keys": "A"},
+        {"var": "st_x_files", "keys": [1]},
+        {"var": 3, "keys": ["A"]},
+    ],
+)
+def test_secret_files_spec_rejects_a_malformed_manifest(bad):
+    meta = appmeta.AppMeta(
+        app="x",
+        env_docs_url="",
+        arch_docs_url="",
+        components=[],
+        dependencies=[],
+        _component_raw={"c": {"key": "c", "secret_files": bad}},
+    )
+    with pytest.raises(StCliError, match="secret_files"):
+        meta.secret_files_spec("c")
 
 
 def test_docs_core_env_render_and_public_host():
@@ -293,6 +354,8 @@ def test_docs_core_env_render_and_public_host():
     assert spec["backend"]["templates"] == ["docs.backend.env.j2"]
     assert spec["caddy"]["blob_var"] == "st_docs_caddy_env"
     assert spec["caddy"]["templates"] == ["docs.caddy.env.j2"]
+    assert spec["yprovider"]["blob_var"] == "st_docs_yprovider_env"
+    assert spec["yprovider"]["templates"] == ["docs.yprovider.env.j2"]
     assert meta.component_vars("docs")["st_docs_public_host"] == "{DOMAIN}"
 
 
@@ -347,3 +410,34 @@ def test_conversations_component_metadata():
     assert any("S3" in r for r in reqs)
     assert any("Identity provider" in r for r in reqs)
     assert any("AI" in r for r in reqs)
+
+
+def test_docs_yhub_is_a_required_dependency():
+    meta = appmeta.load_app("docs")
+    dep = next(d for d in meta.dependencies if d.on == "yhub")
+    assert dep.required is True
+    assert dep.wired_keys == ["CADDY_YHUB_ENDPOINTS", "YHUB_API_BASE_URL"]
+
+
+def test_other_apps_keep_their_dependencies_optional_or_not_required():
+    for app in appmeta.list_apps():
+        if app == "docs":
+            continue
+        for dep in appmeta.load_app(app).dependencies:
+            assert dep.required is False, (app, dep.on)
+            assert dep.wired_keys == []
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"required": "yes"},
+        {"required": True, "optional": True},
+        {"wired_keys": ["A"]},
+        {"required": True, "wired_keys": "A"},
+        {"required": True, "wired_keys": [1]},
+    ],
+)
+def test_dependency_rejects_a_malformed_required_key(bad):
+    with pytest.raises(StCliError, match="required"):
+        appmeta._dependency_from({"of": "a", "on": "b", **bad}, "x")

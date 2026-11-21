@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 import questionary
 
-from ..core import appmeta, manifest, runner, sshuser, tree, ui
+from ..core import appmeta, drift, manifest, runner, sshuser, tree, ui
 from ..core.errors import StCliError
 
 
@@ -338,6 +338,8 @@ def reset(
 ) -> int:
     """Destructive: stop, down -v, rm the app dir, then redeploy a unit."""
     t = resolve_target(app, env, component, host=host, pick=True)
+    # Reset redeploys through the same path as `deploy`: gate before the teardown.
+    drift.require_dependencies(app, env, components=[component])
     if not assume_yes:
         proceed = _require_tty_confirm(
             f"Refusing to reset {t.app_name} non-interactively; pass -y/--yes.",

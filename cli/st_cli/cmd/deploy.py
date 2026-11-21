@@ -28,8 +28,8 @@ def run(
 
     ``host`` (an inventory alias) narrows the run to that single host, passed to
     ansible as ``--limit``; otherwise every host runs one at a time (``serial: 1``).
-    The gate raises before any ssh or network side effect; every other pending
-    flag only warns.
+    The gates (pin, pending flag, required dependency) raise before any ssh or
+    network side effect; every other pending flag only warns.
     """
     m, units = manifest.managed_units(app_name, env, components)
     meta = appmeta.load_app(app_name)
@@ -57,6 +57,7 @@ def run(
             "Rebootstrap required before deploying:\n"
             + "\n".join(f"  - {b}" for b in blocking)
         )
+    drift.require_dependencies(app_name, env, m, components)
 
     targeted: dict[str, list[tuple[str, str]]] = {}
     ips: list[str] = []

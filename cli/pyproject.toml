@@ -46,3 +46,6 @@ ignore = ["B008", "UP042"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "real_rsa: keep the real RSA generator (skip the fixed-key stub of conftest.py)",
+]

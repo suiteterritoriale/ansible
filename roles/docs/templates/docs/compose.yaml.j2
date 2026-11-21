@@ -79,3 +79,16 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+
+  # Conversion service (markdown, html, json to and from yjs). It serves no
+  # collaboration route; the backend calls it at http://y-provider:4444/api/
+  # over the compose network.
+  y-provider:
+    container_name: docs-y-provider
+    image: "{{ st_docs_yprovider_image }}:{{ st_docs_tag }}"
+    env_file: ./yprovider_env
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:4444/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

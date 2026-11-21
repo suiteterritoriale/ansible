@@ -14,6 +14,8 @@ from helpers import (
     accept_defaults,
     conversations_first_run_script,
     docs_first_run_script,
+    docs_hashi_script,
+    docs_yhub_script,
     drive_first_run_script,
     file_scanner_first_run_script,
     livekit_script,
@@ -567,85 +569,133 @@ def test_file_scanner_round_trip_byte_identical(repo, monkeypatch):
     )
 
 
-def test_docs_round_trip_byte_identical(repo, monkeypatch):
-    """An Enter-through docs+yprovider rebootstrap leaves vars.yml/vault.yml
-    byte-identical for both units."""
+_DOCS_UNITS = ("docs", "yhub")
+
+
+def _snapshot_docs_tree(repo, *, manifest_file: bool = True) -> dict:
+    """The bytes of every committed file of the docs and yhub units, and of
+    `.st-cli.yml`."""
+    snap = {
+        f"{unit}/{name}": (repo / f"docs/prod/{unit}/{name}").read_bytes()
+        for unit in _DOCS_UNITS
+        for name in ("vars.yml", "vault.yml", "hosts")
+        if (repo / f"docs/prod/{unit}/{name}").exists()
+    }
+    if manifest_file:
+        snap[".st-cli.yml"] = (repo / ".st-cli.yml").read_bytes()
+    return snap
+
+
+def _docs_pems(repo) -> tuple[str, str]:
+    core = vault.decrypt_to_dict(paths.vault_path("docs", "prod", "docs"))
+    yhub = vault.decrypt_to_dict(paths.vault_path("docs", "prod", "yhub"))
+    return core["vault_jwt_private_key"], yhub["vault_yhub_jwt_private_key"]
+
+
+def _flag_every_docs_unit(monkeypatch, tmp_path) -> None:
+    """Roll every stamp back and flag the app, so `upgrade` replays it silently."""
+    set_flags(
+        monkeypatch,
+        tmp_path,
+        [{"version": __version__, "apps": ["docs"], "reason": "test flag", "link": ""}],
+    )
+    m = manifest.load_manifest()
+    for u in m.units:
+        u.bootstrapped_with = "0.0.1"
+    manifest.save_manifest(m)
+
+
+@pytest.mark.parametrize("migrate", [False, True])
+def test_docs_round_trip_byte_identical(repo, monkeypatch, migrate):
+    """An Enter-through docs+yhub rebootstrap leaves vars.yml, vault.yml and
+    hosts byte-identical for both units, and rotates neither RSA key."""
     seed_creds(repo)
     sq1 = script_questionary(
         monkeypatch,
-        docs_first_run_script(smtp=True, yprovider="Yes — bootstrap now")
-        + [
-            ("text", "yprovider host(s)", "10.0.0.9"),
-            ("confirm", "cadvisor", True),  # yprovider cadvisor
-        ],
+        docs_first_run_script(smtp=True, yhub="Yes — bootstrap now")
+        + docs_yhub_script(migrate=migrate),
     )
     bootstrap.bootstrap("docs", "prod")
     assert not sq1._scripts, f"unconsumed scripts: {sq1._scripts}"
 
-    core_vars_before = (repo / "docs/prod/docs/vars.yml").read_text()
-    core_vault_before = (repo / "docs/prod/docs/vault.yml").read_bytes()
-    yp_vars_before = (repo / "docs/prod/yprovider/vars.yml").read_text()
-    yp_vault_before = (repo / "docs/prod/yprovider/vault.yml").read_bytes()
-    docs_decrypted_before = vault.decrypt_to_dict(
-        paths.vault_path("docs", "prod", "docs")
-    )
-    yp_decrypted_before = vault.decrypt_to_dict(
-        paths.vault_path("docs", "prod", "yprovider")
-    )
-    assert "CADDY_YPROVIDER_ENDPOINTS=10.0.0.9:50601" in core_vars_before
+    before = _snapshot_docs_tree(repo)
+    decrypted_before = {
+        unit: vault.decrypt_to_dict(paths.vault_path("docs", "prod", unit))
+        for unit in _DOCS_UNITS
+    }
+    pems_before = _docs_pems(repo)
+    assert pems_before[0] != pems_before[1]
+    yh_vars = (repo / "docs/prod/yhub/vars.yml").read_text()
+    assert f"SOFT_MIGRATION={'true' if migrate else 'false'}\n" in yh_vars
+    assert ("LEGACY_S3_BUCKET_NAME=docs-media" in yh_vars) is migrate
 
     sq2 = accept_defaults(
         monkeypatch,
         [
             ("select", "Database configuration:", "DATABASE_URL"),
-            (
-                "select",
-                "Bootstrap yprovider now?",
-                "Modify (replay the questionnaire)",
-            ),
+            ("select", "Bootstrap yhub now?", "Modify (replay the questionnaire)"),
         ],
     )
     bootstrap.bootstrap("docs", "prod", replay=bootstrap.ReplayAction.MODIFY)
     assert not sq2._scripts, f"unconsumed scripts: {sq2._scripts}"
 
-    assert (repo / "docs/prod/docs/vars.yml").read_text() == core_vars_before
-    assert (repo / "docs/prod/yprovider/vars.yml").read_text() == yp_vars_before
-    assert (repo / "docs/prod/docs/vault.yml").read_bytes() == core_vault_before
-    assert (repo / "docs/prod/yprovider/vault.yml").read_bytes() == yp_vault_before
-    assert (
-        vault.decrypt_to_dict(paths.vault_path("docs", "prod", "docs"))
-        == docs_decrypted_before
-    )
-    assert (
-        vault.decrypt_to_dict(paths.vault_path("docs", "prod", "yprovider"))
-        == yp_decrypted_before
-    )
-    core_vars_after = (repo / "docs/prod/docs/vars.yml").read_text()
-    assert "CADDY_YPROVIDER_ENDPOINTS=10.0.0.9:50601" in core_vars_after
+    assert _snapshot_docs_tree(repo) == before
+    for unit in _DOCS_UNITS:
+        assert (
+            vault.decrypt_to_dict(paths.vault_path("docs", "prod", unit))
+            == decrypted_before[unit]
+        )
+    assert _docs_pems(repo) == pems_before
+    # a recovered secret is never asked again
+    assert not sq2.asked("text", "POSTGRES (")
+    assert not sq2.asked("text", "REDIS (")
+    assert not sq2.asked("password", "")
+    assert not sq2.asked("text", "LEGACY_S3_SECRET_ACCESS_KEY")
 
 
-def test_docs_kept_external_yprovider_round_trip(repo, monkeypatch):
-    """An Enter-through docs rebootstrap with an external yprovider keeps its secrets
-    and writes no yprovider tree."""
+def test_docs_silent_replay_of_yhub_asks_nothing(repo, monkeypatch, tmp_path):
+    """A silent replay (the `st-cli upgrade` path) of a flagged docs+yhub setup
+    asks nothing, so POSTGRES, REDIS, the gate and the LEGACY prompts stay
+    silent, and it leaves the tree byte-identical."""
+    seed_creds(repo)
+    script_questionary(
+        monkeypatch,
+        docs_first_run_script(smtp=True, yhub="Yes — bootstrap now")
+        + docs_yhub_script(migrate=True),
+    )
+    bootstrap.bootstrap("docs", "prod")
+    _flag_every_docs_unit(monkeypatch, tmp_path)
+    flagged = {n.component for n in upgrades.needed(manifest.load_manifest())}
+    assert {"docs", "yhub"} <= flagged  # the yhub questionnaire runs too
+    before = _snapshot_docs_tree(repo, manifest_file=False)
+    pems_before = _docs_pems(repo)
+
+    sq = script_questionary(monkeypatch, [])
+    bootstrap.bootstrap("docs", "prod", replay=bootstrap.ReplayAction.SILENT)
+
+    assert not sq.prompts, f"a prompt fired: {sq.prompts}"
+    assert _snapshot_docs_tree(repo, manifest_file=False) == before
+    assert _docs_pems(repo) == pems_before
+    m = manifest.load_manifest()
+    for u in m.units:
+        assert u.bootstrapped_with == __version__
+
+
+def test_docs_kept_external_yhub_round_trip(repo, monkeypatch):
+    """An Enter-through docs rebootstrap with an external yhub keeps its secret
+    and writes no yhub tree."""
     seed_creds(repo)
     sq1 = script_questionary(
         monkeypatch,
-        docs_first_run_script(
-            smtp=False, yprovider="Already deployed (enter URL + keys)"
-        )
+        docs_first_run_script(smtp=False, yhub="Already deployed (enter URL + keys)")
         + [
             (
                 "text",
-                "yprovider endpoints (host:port, comma-separated)",
+                "yhub endpoints (host:port, comma-separated)",
                 "10.0.0.9:50601, 10.0.0.10:50601",
             ),
-            (
-                "text",
-                "Y_PROVIDER_API_BASE_URL (backend-only conversion API)",
-                "http://yprovider.internal:50601/api/",
-            ),
-            ("password", "COLLABORATION_SERVER_SECRET", "ext-collab-secret"),
-            ("password", "Y_PROVIDER_API_KEY", "ext-yprovider-key"),
+            ("text", "YHUB_API_BASE_URL", "http://yhub.internal:50601"),
+            ("password", "Y_PROVIDER_API_KEY", "ext-yhub-key"),
         ],
     )
     bootstrap.bootstrap("docs", "prod")
@@ -656,29 +706,663 @@ def test_docs_kept_external_yprovider_round_trip(repo, monkeypatch):
     core_decrypted_before = vault.decrypt_to_dict(
         paths.vault_path("docs", "prod", "docs")
     )
-    assert core_decrypted_before["vault_collaboration_server_secret"] == (
-        "ext-collab-secret"
-    )
-    assert core_decrypted_before["vault_y_provider_api_key"] == "ext-yprovider-key"
-    assert not paths.vars_path("docs", "prod", "yprovider").exists()
+    assert core_decrypted_before["vault_y_provider_api_key"] == "ext-yhub-key"
+    assert "YHUB_API_BASE_URL=http://yhub.internal:50601\n" in core_vars_before
+    assert not paths.vars_path("docs", "prod", "yhub").exists()
 
     sq2 = accept_defaults(
         monkeypatch, [("select", "Database configuration:", "DATABASE_URL")]
     )
     bootstrap.bootstrap("docs", "prod", replay=bootstrap.ReplayAction.MODIFY)
     assert not sq2._scripts, f"unconsumed scripts: {sq2._scripts}"
+    assert not sq2.asked("password", "")
+    assert not sq2.asked("text", "yhub endpoints")
 
     assert (repo / "docs/prod/docs/vars.yml").read_text() == core_vars_before
     assert (repo / "docs/prod/docs/vault.yml").read_bytes() == core_vault_before
-    core_decrypted_after = vault.decrypt_to_dict(
-        paths.vault_path("docs", "prod", "docs")
+    assert (
+        vault.decrypt_to_dict(paths.vault_path("docs", "prod", "docs"))
+        == core_decrypted_before
     )
-    assert core_decrypted_after == core_decrypted_before
-    assert core_decrypted_after["vault_collaboration_server_secret"] == (
-        "ext-collab-secret"
+    assert not paths.vars_path("docs", "prod", "yhub").exists()
+
+
+def test_docs_hashi_round_trip_byte_identical(repo, monkeypatch):
+    """On the hashi_vault backend, an Enter-through docs+yhub rebootstrap keeps
+    the lookup references of both secret-file lists byte-identical and asks no
+    lookup term."""
+    script_questionary(monkeypatch, docs_hashi_script(migrate=True))
+    bootstrap.bootstrap("docs", "prod")
+    before = _snapshot_docs_tree(repo)
+    assert "vault.yml" not in " ".join(before)
+    core_files = tree.load_vars("docs", "prod", "docs")["st_docs_backend_secret_files"]
+    assert "kv/data/docs:JWT_PRIVATE_KEY" in core_files[0]["content"]
+
+    sq = accept_defaults(
+        monkeypatch,
+        [
+            ("select", "Database configuration:", "DATABASE_URL"),
+            ("select", "Bootstrap yhub now?", "Modify (replay the questionnaire)"),
+        ],
     )
-    assert core_decrypted_after["vault_y_provider_api_key"] == "ext-yprovider-key"
-    assert not paths.vars_path("docs", "prod", "yprovider").exists()
+    bootstrap.bootstrap("docs", "prod", replay=bootstrap.ReplayAction.MODIFY)
+
+    assert _snapshot_docs_tree(repo) == before
+    for key in (
+        "JWT_PRIVATE_KEY",
+        "POSTGRES",
+        "REDIS",
+        "LEGACY_S3_SECRET_ACCESS_KEY",
+        "Y_PROVIDER_API_KEY",
+    ):
+        assert not sq.asked("text", key), key
+
+
+def _first_run_docs(
+    monkeypatch,
+    *,
+    core_hosts="10.0.0.5",
+    workers="",
+    yhub_hosts="10.0.0.9",
+    url=None,
+    migrate=False,
+):
+    """A first docs run with yhub deployed. ``url`` answers the YHUB_API_BASE_URL
+    prompt for a layout that asks it."""
+    core = with_answers(
+        docs_first_run_script(smtp=False, yhub="Yes — bootstrap now"),
+        {"docs host(s)": core_hosts, "workers (leave blank": workers},
+    )
+    yhub = docs_yhub_script(hosts=yhub_hosts, migrate=migrate)
+    if url is not None:
+        yhub.insert(-1, ("text", "YHUB_API_BASE_URL", url))
+    sq = script_questionary(monkeypatch, core + yhub)
+    bootstrap.bootstrap("docs", "prod")
+    assert not sq._scripts, f"unconsumed scripts: {sq._scripts}"
+
+
+def _replay_docs(monkeypatch, choice="Modify (replay the questionnaire)", extra=()):
+    sq = accept_defaults(
+        monkeypatch,
+        [
+            ("select", "Database configuration:", "DATABASE_URL"),
+            ("select", "Bootstrap yhub now?", choice),
+            *extra,
+        ],
+    )
+    bootstrap.bootstrap("docs", "prod", replay=bootstrap.ReplayAction.MODIFY)
+    return sq
+
+
+def _docs_lines(*keys):
+    core = tree.load_vars("docs", "prod", "docs")
+    text = str(core["st_docs_backend_env"]) + str(core["st_docs_caddy_env"])
+    return [ln for ln in text.splitlines() if ln.startswith(keys)]
+
+
+_ALIAS = "host.containers.internal:50601"
+_LAYOUTS = {
+    "shared_single_host": (
+        {"yhub_hosts": "10.0.0.5"},
+        f"CADDY_YHUB_ENDPOINTS={_ALIAS}",
+        f"YHUB_API_BASE_URL=http://{_ALIAS}",
+    ),
+    "all_core_hosts_run_yhub": (
+        {"core_hosts": "10.0.0.5, 10.0.0.6", "yhub_hosts": "10.0.0.6, 10.0.0.5"},
+        f"CADDY_YHUB_ENDPOINTS={_ALIAS} 10.0.0.6:50601 10.0.0.5:50601",
+        f"YHUB_API_BASE_URL=http://{_ALIAS}",
+    ),
+    "one_yhub_among_two_core_hosts": (
+        {
+            "core_hosts": "10.0.0.5, 10.0.0.6",
+            "yhub_hosts": "10.0.0.5",
+            "url": "http://lb.internal:50601",
+        },
+        f"CADDY_YHUB_ENDPOINTS={_ALIAS} 10.0.0.5:50601",
+        "YHUB_API_BASE_URL=http://lb.internal:50601",
+    ),
+    "yhub_superset_of_two_core_hosts": (
+        {
+            "core_hosts": "10.0.0.5, 10.0.0.6",
+            "yhub_hosts": "10.0.0.5, 10.0.0.6, 10.0.0.9",
+        },
+        f"CADDY_YHUB_ENDPOINTS={_ALIAS} 10.0.0.5:50601 10.0.0.6:50601 10.0.0.9:50601",
+        "YHUB_API_BASE_URL=http://10.0.0.9:50601",
+    ),
+    "workers_elsewhere_typed_core_host_url": (
+        {
+            "workers": "10.0.0.7",
+            "yhub_hosts": "10.0.0.5",
+            "url": "http://10.0.0.5:50601",
+        },
+        f"CADDY_YHUB_ENDPOINTS={_ALIAS}",
+        "YHUB_API_BASE_URL=http://10.0.0.5:50601",
+    ),
+    "one_yhub_among_two_core_hosts_typed_core_url": (
+        {
+            "core_hosts": "10.0.0.5, 10.0.0.6",
+            "yhub_hosts": "10.0.0.5",
+            "url": "http://10.0.0.5:50601",
+        },
+        f"CADDY_YHUB_ENDPOINTS={_ALIAS} 10.0.0.5:50601",
+        "YHUB_API_BASE_URL=http://10.0.0.5:50601",
+    ),
+    "ipv6": (
+        {"core_hosts": "fd00::5", "yhub_hosts": "fd00::9"},
+        "CADDY_YHUB_ENDPOINTS=[fd00::9]:50601",
+        "YHUB_API_BASE_URL=http://[fd00::9]:50601",
+    ),
+    "workers_elsewhere": (
+        {
+            "workers": "10.0.0.7",
+            "yhub_hosts": "10.0.0.5",
+            "url": "http://yhub-lb.internal:50601",
+        },
+        f"CADDY_YHUB_ENDPOINTS={_ALIAS}",
+        "YHUB_API_BASE_URL=http://yhub-lb.internal:50601",
+    ),
+    "first_yhub_host_is_the_core_host": (
+        {"yhub_hosts": "10.0.0.5, 10.0.0.9"},
+        f"CADDY_YHUB_ENDPOINTS={_ALIAS} 10.0.0.9:50601",
+        "YHUB_API_BASE_URL=http://10.0.0.9:50601",
+    ),
+    "separate_yhub_host": (
+        {},
+        "CADDY_YHUB_ENDPOINTS=10.0.0.9:50601",
+        "YHUB_API_BASE_URL=http://10.0.0.9:50601",
+    ),
+    "several_separate_yhub_hosts": (
+        {"yhub_hosts": "10.0.0.9, 10.0.0.10", "url": ACCEPT_DEFAULT},
+        "CADDY_YHUB_ENDPOINTS=10.0.0.9:50601 10.0.0.10:50601",
+        "YHUB_API_BASE_URL=http://10.0.0.9:50601",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "choice",
+    ["Modify (replay the questionnaire)", "Reuse existing in the repo"],
+    ids=["modify", "reuse"],
+)
+@pytest.mark.parametrize("layout", list(_LAYOUTS))
+def test_docs_layouts_round_trip_byte_identical(repo, monkeypatch, layout, choice):
+    """Each host layout writes the expected caddy upstreams and backend URL, and
+    an Enter-through replay (modify or reuse of yhub) changes no byte, the
+    hosts files and `.st-cli.yml` included."""
+    kwargs, caddy, url = _LAYOUTS[layout]
+    seed_creds(repo)
+    _first_run_docs(monkeypatch, **kwargs)
+    assert _docs_lines("CADDY_YHUB_ENDPOINTS", "YHUB_API_BASE_URL") == [url, caddy]
+    before = _snapshot_docs_tree(repo)
+    decrypted = {
+        u: vault.decrypt_to_dict(paths.vault_path("docs", "prod", u))
+        for u in _DOCS_UNITS
+    }
+
+    sq = _replay_docs(monkeypatch, choice)
+
+    assert not sq.asked("text", "YHUB_API_BASE_URL")
+    assert _snapshot_docs_tree(repo) == before
+    assert {
+        u: vault.decrypt_to_dict(paths.vault_path("docs", "prod", u))
+        for u in _DOCS_UNITS
+    } == decrypted
+
+
+@pytest.mark.parametrize(
+    "layout",
+    [
+        "workers_elsewhere_typed_core_host_url",
+        "one_yhub_among_two_core_hosts_typed_core_url",
+    ],
+)
+def test_docs_silent_replay_keeps_a_typed_url_that_the_rules_do_not_accept(
+    repo, monkeypatch, tmp_path, layout
+):
+    """The operator typed the URL of a core host: an unchanged tree keeps it, so
+    a silent replay asks nothing and changes no byte."""
+    seed_creds(repo)
+    _first_run_docs(monkeypatch, **_LAYOUTS[layout][0])
+    _flag_every_docs_unit(monkeypatch, tmp_path)
+    before = _snapshot_docs_tree(repo, manifest_file=False)
+
+    sq = script_questionary(monkeypatch, [])
+    bootstrap.bootstrap("docs", "prod", replay=bootstrap.ReplayAction.SILENT)
+
+    assert not sq.prompts, f"a prompt fired: {sq.prompts}"
+    assert _snapshot_docs_tree(repo, manifest_file=False) == before
+
+
+def test_docs_typed_url_of_a_core_host_warns_when_typed_and_on_a_replay(
+    repo, monkeypatch, capfd
+):
+    seed_creds(repo)
+    _first_run_docs(
+        monkeypatch,
+        workers="10.0.0.7",
+        yhub_hosts="10.0.0.5",
+        url="http://10.0.0.5:50601",
+    )
+    first = " ".join(capfd.readouterr().err.split())
+    assert "points at 10.0.0.5, a core or workers host" in first
+
+    _replay_docs(monkeypatch)
+
+    again = " ".join(capfd.readouterr().err.split())
+    assert again.count("points at 10.0.0.5") == 1
+
+
+def test_docs_no_valid_url_label_says_what_to_type(repo, monkeypatch):
+    seed_creds(repo)
+    labels = []
+    real = bootstrap._ask
+
+    def spy(label, *a, **k):
+        labels.append(label)
+        return real(label, *a, **k)
+
+    monkeypatch.setattr(bootstrap, "_ask", spy)
+    _first_run_docs(
+        monkeypatch, workers="10.0.0.7", yhub_hosts="10.0.0.5", url="http://lb:50601"
+    )
+    label = next(lb for lb in labels if lb.startswith("YHUB_API_BASE_URL"))
+    assert "internal load balancer" in label and "own hosts" in label
+
+
+def test_docs_reuse_with_several_valid_urls_names_the_chosen_one(
+    repo, monkeypatch, capfd
+):
+    seed_creds(repo)
+    _first_run_docs(
+        monkeypatch, yhub_hosts="10.0.0.9, 10.0.0.10", url="http://10.0.0.10:50601"
+    )
+    _edit_blob(
+        "docs",
+        "st_docs_backend_env",
+        "YHUB_API_BASE_URL=http://10.0.0.10:50601\n",
+        "",
+    )
+    capfd.readouterr()
+
+    _replay_docs(monkeypatch, "Reuse existing in the repo")
+
+    out = " ".join(capfd.readouterr().out.split())
+    assert "YHUB_API_BASE_URL is http://10.0.0.9:50601" in out
+    assert "in modify mode" in out
+
+
+def test_docs_workers_on_another_host_stay_out_of_the_core_group(repo, monkeypatch):
+    """The core hosts prompt is pre-filled from the core group only: an
+    Enter-through keeps the workers host out of `[docs]`."""
+    seed_creds(repo)
+    _first_run_docs(monkeypatch, workers="10.0.0.7")
+    hosts = (repo / "docs/prod/docs/hosts").read_text()
+    assert (
+        hosts
+        == "[docs]\ndocs1 ansible_host=10.0.0.5\n[workers]\nworkers1 ansible_host=10.0.0.7\n"
+    )
+
+    _replay_docs(monkeypatch)
+
+    assert (repo / "docs/prod/docs/hosts").read_text() == hosts
+
+
+def test_workers_on_another_host_round_trip_for_another_app(repo, monkeypatch):
+    """The same fix covers every app with a workers component (drive here)."""
+    seed_creds(repo)
+    script_questionary(
+        monkeypatch,
+        with_answers(drive_first_run_script(), {"workers (leave blank": "10.0.0.8"}),
+    )
+    bootstrap.bootstrap("drive", "prod")
+    before = (repo / "drive/prod/drive/hosts").read_text()
+    assert "[workers]" in before
+
+    accept_defaults(
+        monkeypatch,
+        [
+            ("select", "Database configuration:", "DATABASE_URL"),
+            ("select", "Bootstrap collabora now?", "No — bootstrap later"),
+        ],
+    )
+    bootstrap.bootstrap(
+        "drive", "prod", component="drive", replay=bootstrap.ReplayAction.MODIFY
+    )
+
+    assert (repo / "drive/prod/drive/hosts").read_text() == before
+
+
+def _edit_blob(unit, var, old, new):
+    data = tree.load_vars("docs", "prod", unit)
+    text = str(data[var])
+    assert old in text
+    data[var] = LiteralScalarString(text.replace(old, new))
+    tree.save_vars("docs", "prod", unit, data)
+
+
+def test_docs_hand_edited_origin_survives_in_each_blob(repo, monkeypatch):
+    """COLLABORATION_SERVER_ORIGIN is a copy per blob: a hand edit of the
+    converter blob and one of the yhub blob both stay."""
+    seed_creds(repo)
+    _first_run_docs(monkeypatch)
+    old = "COLLABORATION_SERVER_ORIGIN=https://{{ st_docs_public_host }}"
+    _edit_blob("docs", "st_docs_yprovider_env", old, old + ",https://alt.example.org")
+    _edit_blob("yhub", "st_docs_yhub_env", old, old + ",https://other.example.org")
+    before = _snapshot_docs_tree(repo)
+
+    _replay_docs(monkeypatch)
+
+    assert _snapshot_docs_tree(repo) == before
+    core = str(tree.load_vars("docs", "prod", "docs")["st_docs_yprovider_env"])
+    yhub = str(tree.load_vars("docs", "prod", "yhub")["st_docs_yhub_env"])
+    assert "alt.example.org" in core and "other.example.org" not in core
+    assert "other.example.org" in yhub and "alt.example.org" not in yhub
+
+
+@pytest.mark.parametrize(
+    "choice",
+    ["Modify (replay the questionnaire)", "Reuse existing in the repo"],
+    ids=["modify", "reuse"],
+)
+def test_docs_hand_edited_yhub_url_survives(repo, monkeypatch, choice):
+    seed_creds(repo)
+    _first_run_docs(monkeypatch)
+    _edit_blob(
+        "docs",
+        "st_docs_backend_env",
+        "YHUB_API_BASE_URL=http://10.0.0.9:50601",
+        "YHUB_API_BASE_URL=http://yhub.lan:50601",
+    )
+    before = _snapshot_docs_tree(repo)
+
+    _replay_docs(monkeypatch, choice)
+
+    assert _snapshot_docs_tree(repo) == before
+    assert _docs_lines("YHUB_API_BASE_URL") == [
+        "YHUB_API_BASE_URL=http://yhub.lan:50601"
+    ]
+
+
+def _move_yhub_standalone(monkeypatch, host="10.0.0.11"):
+    accept_defaults(monkeypatch, [("text", "yhub host(s)", host)])
+    bootstrap.bootstrap("docs", "prod", component="yhub")
+
+
+def test_docs_standalone_yhub_host_change_warns_about_the_core(
+    repo, monkeypatch, capfd
+):
+    seed_creds(repo)
+    _first_run_docs(monkeypatch)
+    capfd.readouterr()
+
+    _move_yhub_standalone(monkeypatch)
+
+    err = capfd.readouterr().err
+    assert "CADDY_YHUB_ENDPOINTS" in err and "YHUB_API_BASE_URL" in err
+    assert "st-cli bootstrap docs prod" in err
+    assert "10.0.0.11" in (repo / "docs/prod/yhub/hosts").read_text()
+    # the core is not written by a standalone run
+    assert _docs_lines("CADDY_YHUB_ENDPOINTS") == [
+        "CADDY_YHUB_ENDPOINTS=10.0.0.9:50601"
+    ]
+
+
+def test_docs_standalone_yhub_run_without_a_change_does_not_warn(
+    repo, monkeypatch, capfd
+):
+    seed_creds(repo)
+    _first_run_docs(monkeypatch)
+    capfd.readouterr()
+
+    _move_yhub_standalone(monkeypatch, host="10.0.0.9")
+
+    assert "CADDY_YHUB_ENDPOINTS" not in capfd.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "choice",
+    ["Modify (replay the questionnaire)", "Reuse existing in the repo"],
+    ids=["modify", "reuse"],
+)
+def test_docs_core_replay_after_a_yhub_host_move_follows_the_new_host(
+    repo, monkeypatch, choice
+):
+    """The committed URL was the derived one, so it follows the new yhub host."""
+    seed_creds(repo)
+    _first_run_docs(monkeypatch)
+    _move_yhub_standalone(monkeypatch)
+
+    _replay_docs(monkeypatch, choice)
+
+    assert _docs_lines("CADDY_YHUB_ENDPOINTS", "YHUB_API_BASE_URL") == [
+        "YHUB_API_BASE_URL=http://10.0.0.11:50601",
+        "CADDY_YHUB_ENDPOINTS=10.0.0.11:50601",
+    ]
+
+
+def test_docs_core_replay_after_a_host_move_keeps_a_hand_edited_url_and_warns(
+    repo, monkeypatch, capfd
+):
+    seed_creds(repo)
+    _first_run_docs(monkeypatch)
+    _edit_blob(
+        "docs",
+        "st_docs_backend_env",
+        "YHUB_API_BASE_URL=http://10.0.0.9:50601",
+        "YHUB_API_BASE_URL=http://yhub.lan:50601",
+    )
+    _move_yhub_standalone(monkeypatch)
+    capfd.readouterr()
+
+    _replay_docs(monkeypatch, "Reuse existing in the repo")
+
+    assert _docs_lines("YHUB_API_BASE_URL") == [
+        "YHUB_API_BASE_URL=http://yhub.lan:50601"
+    ]
+    assert "keeps its committed value http://yhub.lan:50601" in capfd.readouterr().err
+    assert _docs_lines("CADDY_YHUB_ENDPOINTS") == [
+        "CADDY_YHUB_ENDPOINTS=10.0.0.11:50601"
+    ]
+
+
+def _move_yhub(monkeypatch, hosts, choice="Modify (replay the questionnaire)"):
+    return _replay_docs(monkeypatch, choice, extra=[("text", "yhub host(s)", hosts)])
+
+
+def test_docs_url_picked_from_the_candidates_follows_a_removed_host(repo, monkeypatch):
+    """The operator picked the second offered host. Once it leaves yhub, the
+    committed value is not valid: it is recomputed, not kept as a hand edit."""
+    seed_creds(repo)
+    _first_run_docs(
+        monkeypatch, yhub_hosts="10.0.0.9, 10.0.0.10", url="http://10.0.0.10:50601"
+    )
+    assert _docs_lines("YHUB_API_BASE_URL") == [
+        "YHUB_API_BASE_URL=http://10.0.0.10:50601"
+    ]
+
+    _move_yhub(monkeypatch, "10.0.0.9")
+
+    assert _docs_lines("YHUB_API_BASE_URL") == [
+        "YHUB_API_BASE_URL=http://10.0.0.9:50601"
+    ]
+
+
+def test_docs_url_stays_when_the_yhub_hosts_change_order(repo, monkeypatch):
+    seed_creds(repo)
+    _first_run_docs(
+        monkeypatch, yhub_hosts="10.0.0.9, 10.0.0.10", url="http://10.0.0.10:50601"
+    )
+    before = _docs_lines("YHUB_API_BASE_URL")
+
+    sq = _move_yhub(monkeypatch, "10.0.0.10, 10.0.0.9")
+
+    assert _docs_lines("YHUB_API_BASE_URL") == before
+    assert not sq.asked("text", "YHUB_API_BASE_URL")
+
+
+def test_docs_load_balancer_url_stays_when_the_hosts_change(repo, monkeypatch, capfd):
+    seed_creds(repo)
+    _first_run_docs(
+        monkeypatch, yhub_hosts="10.0.0.9, 10.0.0.10", url="http://lb.internal:50601"
+    )
+    capfd.readouterr()
+
+    _move_yhub(monkeypatch, "10.0.0.9")
+
+    assert _docs_lines("YHUB_API_BASE_URL") == [
+        "YHUB_API_BASE_URL=http://lb.internal:50601"
+    ]
+    assert "keeps its committed value" in " ".join(capfd.readouterr().err.split())
+
+
+def test_docs_second_yhub_host_on_a_shared_host_moves_the_url(repo, monkeypatch):
+    """Y=[5] becomes [5,9]: the alias URL was derived, and only 9 is valid now."""
+    seed_creds(repo)
+    _first_run_docs(monkeypatch, yhub_hosts="10.0.0.5")
+
+    _move_yhub(monkeypatch, "10.0.0.5, 10.0.0.9")
+
+    assert _docs_lines("CADDY_YHUB_ENDPOINTS", "YHUB_API_BASE_URL") == [
+        "YHUB_API_BASE_URL=http://10.0.0.9:50601",
+        f"CADDY_YHUB_ENDPOINTS={_ALIAS} 10.0.0.9:50601",
+    ]
+
+
+def test_docs_removing_the_colocated_yhub_host_keeps_the_valid_url(repo, monkeypatch):
+    seed_creds(repo)
+    _first_run_docs(monkeypatch, yhub_hosts="10.0.0.5, 10.0.0.9")
+
+    sq = _move_yhub(monkeypatch, "10.0.0.9")
+
+    assert _docs_lines("CADDY_YHUB_ENDPOINTS", "YHUB_API_BASE_URL") == [
+        "YHUB_API_BASE_URL=http://10.0.0.9:50601",
+        "CADDY_YHUB_ENDPOINTS=10.0.0.9:50601",
+    ]
+    assert not sq.asked("text", "YHUB_API_BASE_URL")
+
+
+def test_docs_core_move_with_yhub_reused_recomputes_the_alias_url(repo, monkeypatch):
+    seed_creds(repo)
+    _first_run_docs(monkeypatch, yhub_hosts="10.0.0.5")
+
+    _replay_docs(
+        monkeypatch,
+        "Reuse existing in the repo",
+        extra=[("text", "docs host(s)", "10.0.0.6")],
+    )
+
+    assert _docs_lines("CADDY_YHUB_ENDPOINTS", "YHUB_API_BASE_URL") == [
+        "YHUB_API_BASE_URL=http://10.0.0.5:50601",
+        "CADDY_YHUB_ENDPOINTS=10.0.0.5:50601",
+    ]
+
+
+def test_docs_standalone_move_then_core_reuse_then_modify_is_stable(repo, monkeypatch):
+    seed_creds(repo)
+    _first_run_docs(monkeypatch, yhub_hosts="10.0.0.5")
+    _move_yhub_standalone(monkeypatch, host="10.0.0.5, 10.0.0.9")
+
+    _replay_docs(monkeypatch, "Reuse existing in the repo")
+
+    assert _docs_lines("CADDY_YHUB_ENDPOINTS", "YHUB_API_BASE_URL") == [
+        "YHUB_API_BASE_URL=http://10.0.0.9:50601",
+        f"CADDY_YHUB_ENDPOINTS={_ALIAS} 10.0.0.9:50601",
+    ]
+    before = _snapshot_docs_tree(repo)
+    _replay_docs(monkeypatch)
+    assert _snapshot_docs_tree(repo) == before
+
+
+_URL_CHANGES = [
+    (
+        "removed_picked",
+        {"yhub_hosts": "10.0.0.9, 10.0.0.10", "url": "http://10.0.0.10:50601"},
+        [("text", "yhub host(s)", "10.0.0.9")],
+    ),
+    (
+        "order",
+        {"yhub_hosts": "10.0.0.9, 10.0.0.10", "url": "http://10.0.0.10:50601"},
+        [("text", "yhub host(s)", "10.0.0.10, 10.0.0.9")],
+    ),
+    (
+        "lb",
+        {"yhub_hosts": "10.0.0.9, 10.0.0.10", "url": "http://lb:50601"},
+        [("text", "yhub host(s)", "10.0.0.9")],
+    ),
+    (
+        "shared_plus_9",
+        {"yhub_hosts": "10.0.0.5"},
+        [("text", "yhub host(s)", "10.0.0.5, 10.0.0.9")],
+    ),
+    (
+        "colocated_removed",
+        {"yhub_hosts": "10.0.0.5, 10.0.0.9"},
+        [("text", "yhub host(s)", "10.0.0.9")],
+    ),
+    (
+        "workers_moved_away",
+        {"yhub_hosts": "10.0.0.5"},
+        [
+            ("text", "workers (leave blank", "10.0.0.7"),
+            ("text", "YHUB_API_BASE_URL", "http://lbx:50601"),
+        ],
+    ),
+    (
+        "workers_moved_back_lb",
+        {"workers": "10.0.0.7", "yhub_hosts": "10.0.0.5", "url": "http://lb:50601"},
+        [("text", "workers (leave blank", "")],
+    ),
+    (
+        "workers_moved_back_host_url",
+        {
+            "workers": "10.0.0.7",
+            "yhub_hosts": "10.0.0.5",
+            "url": "http://10.0.0.5:50601",
+        },
+        [("text", "workers (leave blank", "")],
+    ),
+    (
+        "core_moved_onto_yhub_host",
+        {"yhub_hosts": "10.0.0.9, 10.0.0.10", "url": "http://10.0.0.9:50601"},
+        [("text", "docs host(s)", "10.0.0.9")],
+    ),
+    (
+        "one_of_three_removed",
+        {
+            "yhub_hosts": "10.0.0.9, 10.0.0.10, 10.0.0.11",
+            "url": "http://10.0.0.9:50601",
+        },
+        [("text", "yhub host(s)", "10.0.0.10, 10.0.0.11")],
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "choice",
+    ["Modify (replay the questionnaire)", "Reuse existing in the repo"],
+    ids=["modify", "reuse"],
+)
+@pytest.mark.parametrize(
+    "first,extra", [c[1:] for c in _URL_CHANGES], ids=[c[0] for c in _URL_CHANGES]
+)
+def test_docs_topology_changes_settle_into_a_quiet_replay(
+    repo, monkeypatch, tmp_path, first, extra, choice
+):
+    """After any host change, the next silent replay asks nothing and changes no
+    byte: the URL that the change gives is stable."""
+    seed_creds(repo)
+    _first_run_docs(monkeypatch, **first)
+    if choice.startswith("Reuse"):
+        extra = [e for e in extra if e[1] != "yhub host(s)"]
+
+    _replay_docs(monkeypatch, choice, extra=extra)
+
+    _flag_every_docs_unit(monkeypatch, tmp_path)
+    before = _snapshot_docs_tree(repo, manifest_file=False)
+    sq = script_questionary(monkeypatch, [])
+    bootstrap.bootstrap("docs", "prod", replay=bootstrap.ReplayAction.SILENT)
+    assert not sq.prompts, f"a prompt fired: {sq.prompts}"
+    assert _snapshot_docs_tree(repo, manifest_file=False) == before
 
 
 def test_hand_edits_survive_rebootstrap(repo, monkeypatch):

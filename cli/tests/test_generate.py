@@ -373,3 +373,38 @@ def test_legacy_mta_in_unit_still_resolves_for_deploy_and_generate(repo):
     pb = generate.playbook_path("messages", "prod", "mta-in")
     assert pb.exists()
     assert "st_messages_mta_in_enabled: true" in pb.read_text()
+
+
+def test_legacy_yprovider_unit_still_resolves_for_deploy_and_generate(repo):
+    """An old .st-cli.yml with a Docs 5 `yprovider` unit still deploys and
+    generates.
+
+    `yprovider` left `dependencies:` when yhub replaced it. It stays in
+    `components:` so its play runs the legacy cleanup of the role, first.
+    """
+    seed_creds(repo)
+    manifest.save_manifest(
+        StCliManifest(
+            "0.6.0",
+            "0.6.0",
+            [
+                UnitState("docs", "prod", "docs", "managed"),
+                UnitState("docs", "prod", "yprovider", "managed"),
+                UnitState("docs", "prod", "yhub", "managed"),
+            ],
+        )
+    )
+    for comp in ("docs", "yprovider", "yhub"):
+        tree.save_vars("docs", "prod", comp, tree.load_vars("docs", "prod", comp))
+        tree.write_hosts("docs", "prod", comp, comp, ["10.0.0.7"])
+
+    _m, units = manifest.managed_units("docs", "prod", None)
+    assert [u.component for u in units] == ["yprovider", "docs", "yhub"]
+
+    generate.generate_all("docs", "prod")
+    pb = generate.playbook_path("docs", "prod", "yprovider").read_text()
+    assert "st_docs_yprovider_legacy_cleanup_enabled: true" in pb
+    assert "st_docs_yprovider_enabled" not in pb
+    assert "become_user: docs" in pb
+    yhub_pb = generate.playbook_path("docs", "prod", "yhub").read_text()
+    assert "st_docs_yhub_enabled: true" in yhub_pb

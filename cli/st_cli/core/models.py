@@ -14,6 +14,11 @@ MODE_EXTERNAL = "external"
 BACKEND_ANSIBLE_VAULT = "ansible-vault"
 BACKEND_HASHI_VAULT = "hashi_vault"
 
+# Labels of the "Bootstrap <dependency> now?" select that the gate messages quote.
+DEP_LABEL_NOW = "Yes — bootstrap now"
+DEP_LABEL_LATER = "No — bootstrap later"
+DEP_LABEL_EXTERNAL = "Already deployed (enter URL + keys)"
+
 
 @dataclass(frozen=True)
 class Component:

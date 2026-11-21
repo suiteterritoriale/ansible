@@ -40,6 +40,31 @@ def _component_from(c: dict) -> Component:
     )
 
 
+def _dependency_from(d: dict, app: str) -> Dependency:
+    required = d.get("required", False)
+    wired = d.get("wired_keys") or []
+    if (
+        not isinstance(required, bool)
+        or not isinstance(wired, list)
+        or not all(isinstance(k, str) for k in wired)
+        or (required and d.get("optional"))
+        or (wired and not required)
+    ):
+        raise StCliError(
+            f"dependency {d.get('of')!r} -> {d.get('on')!r} of app {app!r}: "
+            "'required' must be a bool, not combined with 'optional', and "
+            "'wired_keys' is a list of strings that needs 'required'."
+        )
+    return Dependency(
+        of=d["of"],
+        on=d["on"],
+        optional=d.get("optional", False),
+        required=required,
+        wired_keys=list(wired),
+        shared=list(d.get("shared", []) or []),
+    )
+
+
 def load_app(app: str) -> AppMeta:
     """Load metadata for `app` from the bundled `apps/<app>.yml`.
 
@@ -53,15 +78,7 @@ def load_app(app: str) -> AppMeta:
     components = [_component_from(c) for c in data.get("components", [])]
     component_raw: dict[str, dict] = {c["key"]: c for c in data.get("components", [])}
 
-    deps = [
-        Dependency(
-            of=d["of"],
-            on=d["on"],
-            optional=d.get("optional", False),
-            shared=list(d.get("shared", []) or []),
-        )
-        for d in data.get("dependencies", [])
-    ]
+    deps = [_dependency_from(d, data["app"]) for d in data.get("dependencies", [])]
 
     return AppMeta(
         app=data["app"],
@@ -79,6 +96,9 @@ class Dependency:
     of: str  # consumer component key (the one holding the env blob)
     on: str  # provider component key (the dependency)
     optional: bool = False  # messages' mpa/socks_proxy: skippable at bootstrap
+    required: bool = False  # deploy refuses until the provider is set up or external
+    wired_keys: list[str] = field(default_factory=list)
+    # env keys of the consumer blobs that must hold a value once it is wired
     shared: list[dict] = field(default_factory=list)
     # each rule dict: {consumer_env_key, var, generate|prompt}. Either
     # generate ("secret"|"token") or prompt (kind) is set; never both.
@@ -147,3 +167,26 @@ class AppMeta:
         """
         raw = self._component_raw.get(component_key, {})
         return dict(raw.get("vars") or {})
+
+    def secret_files_spec(self, component_key: str) -> dict:
+        """Return the `secret_files` mapping for the given component.
+
+        Shape: `{"var": "<st_* list var>", "keys": ["ENV", ...]}`. Returns
+        `{}` when the component declares none.
+        """
+        raw = self._component_raw.get(component_key, {})
+        spec = dict(raw.get("secret_files") or {})
+        if not spec:
+            return {}
+        keys = spec.get("keys")
+        if (
+            not isinstance(spec.get("var"), str)
+            or not isinstance(keys, list)
+            or not keys
+            or not all(isinstance(k, str) for k in keys)
+        ):
+            raise StCliError(
+                f"secret_files of component {component_key!r} in app "
+                f"{self.app!r} needs a 'var' string and a non-empty 'keys' list."
+            )
+        return spec

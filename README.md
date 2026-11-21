@@ -34,7 +34,7 @@ You can find the documentation of the collection under the [docs/](docs/) direct
 - **[03-meet/](docs/03-meet/)** meet app, livekit, egress (recording)
 - **[04-messages/](docs/04-messages/)** messages app, workers, pymta, socks-proxy, mpa
 - **[05-projects/](docs/05-projects/)** projects app
-- **[06-docs/](docs/06-docs/)** docs app, workers, yprovider
+- **[06-docs/](docs/06-docs/)** docs app, workers, yhub
 - **[07-transfers/](docs/07-transfers/)** transfers app, workers
 - **[08-file-scanner/](docs/08-file-scanner/)** file-scanner antivirus service
 - **[09-conversations/](docs/09-conversations/)** conversations app, workers

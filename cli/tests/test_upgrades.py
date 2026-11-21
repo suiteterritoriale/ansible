@@ -878,3 +878,55 @@ class TestUpgradeFlagFileLint:
             assert isinstance(warnings, list) and all(
                 isinstance(s, str) for s in warnings
             ), f"{label}: 'warnings' must be a list of strings, got {warnings!r}"
+
+
+def test_docs_6_flag_replays_the_core_and_offers_yhub(repo):
+    """The bundled docs 6 flag forces a full replay of the core, offers yhub once,
+    and its warnings name the real v5 leftovers."""
+    flag = next(
+        f
+        for f in upgrades.load_flags()
+        if f.get("apps") == ["docs"] and "yhub" in (f.get("new_components") or [])
+    )
+    assert flag["version"] == upgrades.NEXT
+    assert flag["components"] == ["docs"]
+    assert flag["full_replay"] is True
+    assert set(flag["new_components"]) <= upgrades.offerable_components("docs")
+    text = "\n".join(flag["warnings"])
+    for leftover in (
+        "COLLABORATION_SERVER_SECRET",
+        "COLLABORATION_API_URL",
+        "CADDY_YPROVIDER_ENDPOINTS",
+        "vault_collaboration_server_secret",
+        "migrate_documents",
+        "SOFT_MIGRATION=false",
+        "vault_legacy_s3_secret_access_key",
+        "generate-keypairs docs",
+        "LEGACY_S3_SECRET_ACCESS_KEY",
+        "s3:ListBucketVersions",
+        "With ansible-vault: remove vault_collaboration_server_secret",
+        "yhub answers 503",
+        "migrate_documents --retry-failed",
+        "port 50601",
+        "Enable bucket versioning on the media bucket before the deploy",
+    ):
+        assert leftover in text, leftover
+    # the merge rewrites COLLABORATION_WS_URL by itself: no manual step
+    assert "COLLABORATION_WS_URL" not in text
+    assert "before the replay" not in text
+    assert all(len(w.split(". ")) <= 2 for w in flag["warnings"])
+
+
+def test_docs_6_flag_does_not_flag_the_legacy_yprovider_unit():
+    """yprovider has no replay path: it is never flagged, so deploy never blocks."""
+    m = StCliManifest(
+        "0.6.0",
+        "0.6.0",
+        [
+            UnitState("docs", "prod", "docs", "managed", "0.6.0"),
+            UnitState("docs", "prod", "yprovider", "managed", "0.6.0"),
+        ],
+    )
+    assert {n.component for n in upgrades.needed(m, "docs", "prod")} == {"docs"}
+    offers = upgrades.new_component_offers(m, "docs", "prod")
+    assert [o.component for o in offers] == ["yhub"]

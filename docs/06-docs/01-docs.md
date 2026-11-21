@@ -16,9 +16,11 @@ separate systemd user unit. All sub-apps are disabled by default and must be exp
 
 | Sub-App | Description | Doc |
 |---------|-------------|-----|
-| **docs** | Core web application (caddy + frontend + backend) | This page |
+| **docs** | Core web application (caddy + frontend + backend + conversion services) | This page |
 | **workers** | Celery background workers | [02-workers.md](02-workers.md) |
-| **yprovider** | Real-time collaboration server | [03-yprovider.md](03-yprovider.md) |
+| **yhub** | Real-time collaboration server, holds the document content | [03-yhub.md](03-yhub.md) |
+
+To upgrade an instance from Docs v5, read [04-upgrade-v5-to-v6.md](04-upgrade-v5-to-v6.md) first.
 
 ## Container Stack
 
@@ -26,15 +28,19 @@ separate systemd user unit. All sub-apps are disabled by default and must be exp
 docs-caddy (docker.io/caddy), published on the host
   ├── /api*, /admin, /admin/*, /external_api/*, /static/* → docs-backend (docker.io/lasuite/impress-backend)
   ├── /media/* → S3, forward_auth against docs-backend
-  ├── /collaboration/* → yprovider hosts, lb_policy query room (see 03-yprovider.md)
+  ├── /collaboration/(ws|ydoc|rollback|changeset|activity|jwks)/ → yhub hosts (see 03-yhub.md)
+  ├── other /collaboration/* paths → 404
   └── everything else → docs-frontend (docker.io/lasuite/impress-frontend, stock SPA nginx conf)
 
 docs-docspec (ghcr.io/docspecio/api), no published port
   └── backend-only .docx conversion for the import feature (http://docspec:4000/conversion)
+
+docs-y-provider (docker.io/lasuite/impress-y-provider), no published port
+  └── backend-only conversion of markdown, html and json to and from yjs (http://y-provider:4444/api/)
 ```
 
 Caddy owns the host port and dispatches each request to the backend, the frontend, S3, or the
-yprovider unit.
+yhub unit. The y-provider serves no collaboration route in Docs v6. It only converts documents.
 
 ## Prerequisites
 
@@ -45,6 +51,8 @@ yprovider unit.
 | Disk | 2 GB for images + data |
 | Database | External PostgreSQL (configured via env) |
 | Redis | External Redis (configured via env) |
+| yhub database | A second PostgreSQL database for the yhub unit, created before the first deployment (see [03-yhub.md](03-yhub.md)) |
+| yhub Redis | A durable Redis 6.2 or later, or Valkey, for the yhub unit. Do not use the Django cache (see [03-yhub.md](03-yhub.md)) |
 | Identity | An OIDC provider, e.g. Keycloak (see [02-keycloak](../02-keycloak/01-keycloak.md)) |
 | S3 Storage | S3-compatible object storage for document media |
 
@@ -59,12 +67,16 @@ reference.
 |----------|-------------|---------|
 | `st_docs_enabled` | Enable the docs app | `false` |
 | `st_docs_public_host` | Public hostname for the app | **(required)** |
-| `st_docs_tag` | Docker image tag (shared by frontend, backend, yprovider) | `v5.4.1` |
+| `st_docs_tag` | Docker image tag (shared by frontend, backend, y-provider, yhub) | `v6.1.0` |
 | `st_docs_dir` | Application directory | `/opt/docs/docs` |
 | `st_docs_uid` | Unix UID for the docs user | `1106` |
 | `st_docs_port` | Host port for the caddy edge | `50600` |
-| `st_docs_backend_env` | Backend environment content | _(empty)_ |
-| `st_docs_caddy_env` | Caddy env content: `CADDY_S3_*` + `CADDY_YPROVIDER_ENDPOINTS` (space-separated `host:port` yprovider upstreams for the `/collaboration/*` route), plus optional `CADDY_ADMIN_IP_ALLOWLIST` / `CADDY_TRUSTED_PROXIES` | _(empty, required keys)_ |
+| `st_docs_backend_env` | Backend environment content. It needs `YHUB_API_BASE_URL`, `COLLABORATION_WS_URL`, `Y_PROVIDER_API_BASE_URL` and `Y_PROVIDER_API_KEY` (same value as in `st_docs_yhub_env`) | _(empty)_ |
+| `API_DOCUMENT_THROTTLE_RATE` (in `st_docs_backend_env`) | Anonymous throttle of the documents API, default `80/minute`. See [04-upgrade-v5-to-v6.md](04-upgrade-v5-to-v6.md#throttle) | `80/minute` |
+| `st_docs_backend_secret_files` | Secrets that the backend reads from files, such as `JWT_PRIVATE_KEY` | `[]` |
+| `st_docs_yprovider_env` | Env file of the y-provider conversion service in the docs unit | _(empty)_ |
+| `st_docs_caddy_env` | Caddy env content: `CADDY_S3_*` + `CADDY_YHUB_ENDPOINTS` (space-separated `host:port` yhub upstreams for the `/collaboration/*` route), plus optional `CADDY_ADMIN_IP_ALLOWLIST` / `CADDY_TRUSTED_PROXIES` | _(empty, required keys)_ |
+| `st_docs_yprovider_legacy_cleanup_enabled` | Remove the legacy `yprovider` unit of Docs v5 from the hosts | `true` |
 | `st_docs_frontend_logo_src` | Local path to an optional custom logo (svg) | _(unset)_ |
 | `st_docs_theme_customization_src` | Local path to an optional theme customization JSON | _(unset)_ |
 | `st_docs_backend_run_migrations` | Run Django migrations on deploy | `true` |
@@ -94,7 +106,7 @@ st_docs_caddy_env: |
   CADDY_S3_PROTOCOL=https
   CADDY_S3_HOST=s3.example.com
   CADDY_S3_BUCKET=docs-media-storage
-  CADDY_YPROVIDER_ENDPOINTS=yprovider1.example.com:4444 yprovider2.example.com:4444
+  CADDY_YHUB_ENDPOINTS=yhub1.example.com:50601 yhub2.example.com:50601
   # Load balancer range: trusted proxy only (default: private_ranges).
   CADDY_TRUSTED_PROXIES=203.0.113.0/24
   # Operator network allowed on the Django admin URL (default: allow all).
@@ -124,9 +136,14 @@ object storage; this mirrors how the upstream nginx ingress protects media downl
 
 ## S3 Retention
 
+In Docs v6 the content of a document lives in the yhub database. The bucket holds the attachments and
+the legacy `<document-id>/file` objects of Docs v5. You must keep the bucket versioning and these
+objects. Do not delete them before the migration of the documents ends (see
+[04-upgrade-v5-to-v6.md](04-upgrade-v5-to-v6.md)).
+
 Docs never deletes objects from the bucket. The trash retention (`TRASHBIN_CUTOFF_DAYS`,
 default 30 days) only hides expired documents from the trashbin — the database rows, the
-document content, the attachments, and all object versions stay in S3 forever. No task or
+attachments, the legacy objects, and all object versions stay in S3 forever. No task or
 scheduled job purges them.
 
 What you can do to reclaim the space of one document tree is to run the upstream `clean_document` management
@@ -140,7 +157,7 @@ The compose ships a `docs-docspec` container by default. [DocSpec](https://githu
 is a small, stateless conversion service (an Elixir API): it converts `.docx` documents into the
 BlockNote JSON format the editor uses. The backend calls it server-side at
 `http://docspec:4000/conversion` when a user imports a `.docx` file; `.md` imports go through the
-yprovider instead. The container publishes no port, keeps no data, and needs no configuration.
+y-provider instead. The container publishes no port, keeps no data, and needs no configuration.
 The import feature itself is switched on by `CONVERSION_UPLOAD_ENABLED=true` in the backend env.
 
 ## Data & Volumes
@@ -151,7 +168,8 @@ application, other than the optional theme file below.
 
 ## Database Migrations
 
-The role runs `python manage.py migrate` via `podman-compose run` after deployment. This task
+The role runs `python manage.py migrate` via `podman-compose run` after deployment of the docs unit.
+The yhub unit has its own schema task (see [03-yhub.md](03-yhub.md)). The Django `migrate` task
 has `run_once: true`, so it executes once per play. If your deployment uses `serial:`, set
 `st_docs_backend_run_migrations: false` on all hosts except one to avoid running migrations
 multiple times.
@@ -160,8 +178,8 @@ multiple times.
 
 You can either:
 
-- Set `st_docs_backend_env` / `st_docs_frontend_env` / `st_docs_caddy_env` to provide env
-  content inline
+- Set `st_docs_backend_env` / `st_docs_frontend_env` / `st_docs_caddy_env` / `st_docs_yprovider_env`
+  to provide env content inline
 - Set the matching `_env_template` variable to use a custom template
 
 ## Secrets from Files
@@ -194,7 +212,7 @@ The docs workers use `st_docs_workers_secret_files`. The default value is `st_do
 
 The file has priority over the same variable in `st_docs_backend_env`. If both are set, the backend uses the file.
 
-Upstream docs `v5.6.1` supports `_FILE` for these variables (`SecretFileValue` in `src/backend/impress/settings.py`):
+Upstream docs `v6.1.0` supports `_FILE` for these variables (`SecretFileValue` in `src/backend/impress/settings.py`):
 
 - `DJANGO_SECRET_KEY`: Django secret key.
 - `DB_PASSWORD`: Database password.
@@ -203,8 +221,9 @@ Upstream docs `v5.6.1` supports `_FILE` for these variables (`SecretFileValue` i
 - `DJANGO_EMAIL_HOST_PASSWORD`: SMTP password.
 - `OIDC_RP_CLIENT_SECRET`: OIDC client secret.
 - `POSTHOG_KEY`: PostHog key.
-- `COLLABORATION_SERVER_SECRET`: Secret shared with the y-provider.
-- `Y_PROVIDER_API_KEY`: API key of the y-provider.
+- `Y_PROVIDER_API_KEY`: Key that yhub sends to the backend to skip the API throttling.
+- `PROMETHEUS_API_KEY`: Key that protects the `/metrics` endpoint.
+- `JWT_PRIVATE_KEY`: RSA private key (PKCS#8 PEM) that signs the tokens for yhub and the y-provider.
 - `MISTRAL_SDK_API_KEY`: Mistral API key.
 - `OPENAI_SDK_API_KEY`: OpenAI API key.
 - `AI_API_KEY`: Former name of `OPENAI_SDK_API_KEY`.
@@ -213,15 +232,24 @@ Upstream docs `v5.6.1` supports `_FILE` for these variables (`SecretFileValue` i
 Upstream does not support `_FILE` for other variables.
 If you add an item for another variable, the backend ignores the file.
 Multi-line values, such as a PEM key, work with `content: |` or with a template.
-No variable of this list holds a PEM key.
+`JWT_PRIVATE_KEY` is the only variable of this list that holds a PEM key:
+
+```yaml
+st_docs_backend_secret_files:
+  - env: JWT_PRIVATE_KEY
+    content: "{{ vault_jwt_private_key }}"
+```
+
+The workers use the same list. They need the key to call yhub.
 
 If you use a custom compose template (`st_docs_compose_template` or `st_docs_workers_compose_template`),
 the template must declare the `environment:` and `volumes:` entries itself.
 
 If `DATABASE_URL` is set, the DB settings come from the URL. Then `DB_PASSWORD_FILE` has no effect.
 
-The y-provider does not read these files. It still reads `COLLABORATION_SERVER_SECRET` and `Y_PROVIDER_API_KEY`
-from `st_docs_yprovider_env`.
+The y-provider does not read these files. It reads `COLLABORATION_BACKEND_BASE_URL` (and optionally
+`COLLABORATION_SERVER_ORIGIN`) from `st_docs_yprovider_env`. The yhub unit has its own list,
+`st_docs_yhub_secret_files` (see [03-yhub.md](03-yhub.md)).
 
 ## Custom Theme
 
@@ -269,11 +297,12 @@ bypasses the mount.
 
 ## Bootstrap with st-cli
 
-`st-cli` generates and mirrors the two secrets the core and the yprovider unit share
-(`COLLABORATION_SERVER_SECRET`, `Y_PROVIDER_API_KEY`) into both vaults, and builds
-`CADDY_YPROVIDER_ENDPOINTS` from the yprovider hosts you enter during the questionnaire. See
-[03-yprovider.md](03-yprovider.md) for the shared-secret and endpoint details, and
-[00-getting-started/01-st-cli.md](../00-getting-started/01-st-cli.md) for general st-cli usage.
+`st-cli bootstrap docs <env>` writes the `docs`, `yhub` and `workers` units. With the ansible-vault
+backend, it generates the two RSA keys of Docs v6 and deploys them as secret files. With the hashi_vault
+backend, you create the keys with `st-cli generate-keypairs docs <env>` and give the lookup terms.
+St-cli builds `CADDY_YHUB_ENDPOINTS` and `YHUB_API_BASE_URL` from the yhub hosts you enter during the
+questionnaire. See [03-yhub.md](03-yhub.md) for the key and endpoint
+details, and [00-getting-started/01-st-cli.md](../00-getting-started/01-st-cli.md) for general st-cli usage.
 
 ## Troubleshooting
 

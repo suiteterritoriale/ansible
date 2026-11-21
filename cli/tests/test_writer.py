@@ -469,3 +469,226 @@ def test_ensure_vault_readable_raises_for_bad_vault(repo):
 
     with pytest.raises(StCliError):
         writer.ensure_vault_readable("meet", "prod", ["livekit"])
+
+
+_PEM = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBg\n-----END PRIVATE KEY-----\n"
+_REF = "{{ vault_jwt_private_key }}"
+
+
+def _docs_core():
+    meta = appmeta.load_app("docs")
+    return meta, meta.core()
+
+
+def _files(data) -> list[dict]:
+    return [dict(i) for i in data["st_docs_backend_secret_files"]]
+
+
+def test_apply_secret_files_appends_a_missing_item():
+    meta, core = _docs_core()
+    data = CommentedMap()
+    writer.apply_secret_files(data, meta, core, {"JWT_PRIVATE_KEY": _REF})
+    assert _files(data) == [{"env": "JWT_PRIVATE_KEY", "content": _REF}]
+
+
+def test_apply_secret_files_ignores_a_key_the_manifest_does_not_declare():
+    meta, core = _docs_core()
+    data = CommentedMap()
+    writer.apply_secret_files(
+        data, meta, core, {"JWT_PRIVATE_KEY": _REF, "YHUB_JWT_PRIVATE_KEY": "x"}
+    )
+    assert [i["env"] for i in data["st_docs_backend_secret_files"]] == [
+        "JWT_PRIVATE_KEY"
+    ]
+
+
+def test_apply_secret_files_writes_nothing_without_an_answer():
+    meta, core = _docs_core()
+    data = CommentedMap()
+    writer.apply_secret_files(data, meta, core, {})
+    writer.apply_secret_files(data, meta, core, {"JWT_PRIVATE_KEY": ""})
+    assert "st_docs_backend_secret_files" not in data
+
+
+def test_apply_secret_files_updates_a_changed_content():
+    meta, core = _docs_core()
+    data = CommentedMap()
+    writer.apply_secret_files(data, meta, core, {"JWT_PRIVATE_KEY": _REF})
+    writer.apply_secret_files(data, meta, core, {"JWT_PRIVATE_KEY": "{{ other }}"})
+    assert _files(data) == [{"env": "JWT_PRIVATE_KEY", "content": "{{ other }}"}]
+
+
+def test_apply_secret_files_keeps_an_item_with_src():
+    """An operator who ships the key as a file (`src`) owns that item."""
+    meta, core = _docs_core()
+    data = CommentedMap()
+    data["st_docs_backend_secret_files"] = [
+        {"env": "JWT_PRIVATE_KEY", "src": "files/jwt.pem"}
+    ]
+    writer.apply_secret_files(data, meta, core, {"JWT_PRIVATE_KEY": _REF})
+    assert _files(data) == [{"env": "JWT_PRIVATE_KEY", "src": "files/jwt.pem"}]
+
+
+def test_apply_secret_files_keeps_the_items_of_the_operator():
+    meta, core = _docs_core()
+    data = CommentedMap()
+    data["st_docs_backend_secret_files"] = [{"env": "MY_OTHER_SECRET", "content": "x"}]
+    writer.apply_secret_files(data, meta, core, {"JWT_PRIVATE_KEY": _REF})
+    assert _files(data) == [
+        {"env": "MY_OTHER_SECRET", "content": "x"},
+        {"env": "JWT_PRIVATE_KEY", "content": _REF},
+    ]
+
+
+def test_apply_secret_files_is_a_no_op_when_all_is_equal(repo):
+    """The tree stays byte-identical: same items, same text on disk."""
+    meta, core = _docs_core()
+    data = CommentedMap()
+    data["st_docs_backend_secret_files"] = [
+        {"env": "MY_OTHER_SECRET", "content": "x"},
+        {"env": "JWT_PRIVATE_KEY", "content": _REF},
+    ]
+    tree.save_vars("docs", "prod", "docs", data)
+    before = paths.vars_path("docs", "prod", "docs").read_text()
+
+    loaded = tree.load_vars("docs", "prod", "docs")
+    writer.apply_secret_files(loaded, meta, core, {"JWT_PRIVATE_KEY": _REF})
+    tree.save_vars("docs", "prod", "docs", loaded)
+
+    assert paths.vars_path("docs", "prod", "docs").read_text() == before
+
+
+def test_apply_secret_files_for_a_component_without_the_spec():
+    meta = appmeta.load_app("docs")
+    data = CommentedMap()
+    writer.apply_secret_files(
+        data, meta, meta.component("workers"), {"JWT_PRIVATE_KEY": _REF}
+    )
+    assert not data
+
+
+def test_apply_secret_files_keeps_a_hashi_lookup_reference_verbatim():
+    meta, core = _docs_core()
+    ref = hashi_lookup_ref("kv/data/docs:JWT_PRIVATE_KEY")
+    data = CommentedMap()
+    writer.apply_secret_files(data, meta, core, {"JWT_PRIVATE_KEY": ref})
+    assert _files(data) == [{"env": "JWT_PRIVATE_KEY", "content": ref}]
+
+
+def test_apply_env_render_merges_into_a_committed_blob():
+    meta = appmeta.load_app("docs")
+    data = CommentedMap()
+    data["st_docs_yprovider_env"] = "COLLABORATION_LOGGING=false\nMY_KEY=1\n"
+    answers = {
+        "COLLABORATION_BACKEND_BASE_URL": "https://{{ st_docs_public_host }}",
+        "COLLABORATION_SERVER_ORIGIN": "https://{{ st_docs_public_host }}",
+    }
+    writer.apply_env_render(data, "docs", "docs", answers, "# added")
+    blob = str(data["st_docs_yprovider_env"])
+    assert blob.startswith("COLLABORATION_LOGGING=true\nMY_KEY=1\n")  # in place
+    assert "# added\nCOLLABORATION_BACKEND_BASE_URL=https://" in blob
+    assert isinstance(data["st_docs_yprovider_env"], LiteralScalarString)
+    assert meta  # the spec comes from the manifest
+
+
+def test_apply_env_render_for_a_component_without_a_spec_changes_nothing():
+    data = CommentedMap()
+    writer.apply_env_render(data, "docs", "workers", {"DOMAIN": "x"}, "# added")
+    assert not data
+
+
+def test_write_vault_writes_a_multi_line_value_as_a_literal_block(repo):
+    """A PEM stays readable in `st-cli secrets`, and round-trips exactly."""
+    seed_creds(repo)
+    backend = AnsibleVaultBackend()
+    backend.env_secret({}, "JWT_PRIVATE_KEY", component="docs", value=_PEM)
+    backend.env_secret({}, "ONE_LINER", component="docs", value="plain")
+
+    writer.write_vault("docs", "prod", "docs", backend)
+
+    path = paths.vault_path("docs", "prod", "docs")
+    clear = vault._run_vault("view", path).stdout
+    assert "vault_jwt_private_key: |\n" in clear
+    assert "vault_one_liner: plain\n" in clear
+    decrypted = vault.decrypt_to_dict(path)
+    assert decrypted["vault_jwt_private_key"] == _PEM
+    assert decrypted["vault_one_liner"] == "plain"
+
+
+def test_write_vault_unchanged_multi_line_value_is_not_rewritten(repo):
+    seed_creds(repo)
+    backend = AnsibleVaultBackend()
+    backend.env_secret({}, "JWT_PRIVATE_KEY", component="docs", value=_PEM)
+    writer.write_vault("docs", "prod", "docs", backend)
+    path = paths.vault_path("docs", "prod", "docs")
+    before = path.read_bytes()
+
+    again = AnsibleVaultBackend()
+    again.env_secret({}, "JWT_PRIVATE_KEY", component="docs", value=_PEM)
+    writer.write_vault("docs", "prod", "docs", again)
+
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("bad", ["{{ my_list }}", {}, "text"])
+def test_apply_secret_files_warns_when_the_variable_is_not_a_list(bad, capfd):
+    """An operator who drives the list from a template keeps it: st-cli warns and
+    changes nothing."""
+    meta, core = _docs_core()
+    data = CommentedMap()
+    data["st_docs_backend_secret_files"] = bad
+
+    writer.apply_secret_files(data, meta, core, {"JWT_PRIVATE_KEY": _REF})
+
+    assert data["st_docs_backend_secret_files"] == bad
+    err = " ".join(capfd.readouterr().err.split())
+    assert "st_docs_backend_secret_files is not a list" in err
+    assert "Add the item for JWT_PRIVATE_KEY by hand" in err
+
+
+def test_write_vault_keeps_the_scalar_style_of_a_value_with_a_carriage_return(repo):
+    """A `\\r` does not round-trip in a literal block."""
+    seed_creds(repo)
+    value = "line one\r\nline two\r\n"
+    backend = AnsibleVaultBackend()
+    backend.env_secret({}, "WINDOWS_VALUE", component="docs", value=value)
+
+    writer.write_vault("docs", "prod", "docs", backend)
+
+    path = paths.vault_path("docs", "prod", "docs")
+    assert "vault_windows_value: |" not in vault._run_vault("view", path).stdout
+    assert vault.decrypt_to_dict(path)["vault_windows_value"] == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "a \nb\n",
+        "  lead\nx\n",
+        "x\n\n\n",
+        "a\r\nb\n",
+        "a\x85b\nc",
+        "a b\nc",
+        "x\n\x00y",
+        "a\tb\nc\n",
+        " \n",
+        "\n\ttab first\nx\n",
+        "\ta\nb\n",
+        _PEM,
+    ],
+)
+def test_scalar_round_trips_through_yaml(value):
+    """A multi-line value reads back as written; a literal block only for a
+    value made of printable ASCII, tabs and newlines."""
+    import io
+
+    cm = CommentedMap()
+    cm["k"] = writer._scalar(value)
+    out = io.StringIO()
+    tree.yaml().dump(cm, out)
+    assert str(tree.yaml().load(out.getvalue())["k"]) == value
+    first = next((ln for ln in value.split("\n") if ln.strip()), "")
+    safe = all(c == "\t" or c == "\n" or " " <= c <= "~" for c in value)
+    assert isinstance(cm["k"], LiteralScalarString) is (
+        safe and not first.startswith("\t")
+    )
