@@ -54,13 +54,17 @@ See [roles/drive/REFERENCE.md](../../roles/drive/REFERENCE.md) for the complete 
 |----------|-------------|---------|
 | `st_drive_enabled` | Enable the drive app | `false` |
 | `st_drive_public_host` | Public hostname for the app | **(required)** |
-| `st_drive_tag` | Docker image tag | see REFERENCE.md |
+| `st_drive_tag` | Docker image tag, the default of the per-image tags | see REFERENCE.md |
+| `st_drive_frontend_tag` | Docker image tag of the frontend | `{{ st_drive_tag }}` |
+| `st_drive_backend_tag` | Docker image tag of the backend and the workers | `{{ st_drive_tag }}` |
 | `st_drive_dir` | Application directory | `/opt/drive/drive` |
 | `st_drive_uid` | Unix UID for the drive user | `1101` |
 | `st_drive_port` | Host port for the caddy edge | `50100` |
 | `st_drive_backend_env` | Backend environment content | _(empty)_ |
 | `st_drive_caddy_env` | Caddy env content: `CADDY_S3_PROTOCOL`, `CADDY_S3_HOST`, `CADDY_S3_BUCKET` for the media proxy, plus optional `CADDY_ADMIN_IP_ALLOWLIST` / `CADDY_TRUSTED_PROXIES` / `CADDY_METRICS_IP_ALLOWLIST` / `CADDY_METRICS_HOST` | _(empty, required keys)_ |
 | `st_drive_backend_run_migrations` | Run Django migrations on deploy | `true` |
+
+> Set a per-image tag only to deploy a rebuild of one image, for example `st_drive_frontend_tag: v0.25.3-1`. Remove the override before you upgrade the collection or change `st_drive_tag`.
 
 ## Network & Ports
 

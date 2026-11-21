@@ -26,6 +26,8 @@ Installs and configures the Transfers application from La Suite Territoriale on 
 | st_transfers_frontend_image | Image repository for the transfers frontend. | str | no | `ghcr.io/suitenumerique/transfers-frontend` |
 | st_transfers_backend_image | Image repository for the transfers backend. | str | no | `ghcr.io/suitenumerique/transfers-backend` |
 | st_transfers_tag | Tag of the transfers docker images to deploy. Requires >= 0.5.0: background tasks run on dramatiq, so the CLI writes `WORKER_BROKER_URL` and the workers unit is probed with `python worker.py --ping`, neither of which an earlier image has. | str | no | `0.5.0` |
+| st_transfers_frontend_tag | Tag of the transfers frontend docker image to deploy. Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_transfers_tag. | str | no | `{{ st_transfers_tag }}` |
+| st_transfers_backend_tag | Tag of the transfers backend docker image to deploy. The workers unit uses the same tag. Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_transfers_tag. | str | no | `{{ st_transfers_tag }}` |
 | st_transfers_enabled | Triggers the installation of the transfers application. | bool | no | `False` |
 | st_transfers_dir | Remote path to the base directory for transfers app. | str | no | `/opt/transfers/transfers` |
 | st_transfers_port | The host published port for the transfers frontend (maps to the container's Caddy port 8080). | str | no | `50700` |

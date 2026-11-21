@@ -26,6 +26,8 @@ Installs and configures the Drive application from La Suite Territoriale on Debi
 | st_drive_frontend_image | Image repository for the drive frontend. | str | no | `docker.io/lasuite/drive-frontend` |
 | st_drive_backend_image | Image repository for the drive backend. | str | no | `docker.io/lasuite/drive-backend` |
 | st_drive_tag | Tag of the drive docker images to deploy. | str | no | `v0.25.3` |
+| st_drive_frontend_tag | Tag of the drive frontend docker image to deploy. Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_drive_tag. | str | no | `{{ st_drive_tag }}` |
+| st_drive_backend_tag | Tag of the drive backend docker image to deploy. The workers unit uses the same tag. Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_drive_tag. | str | no | `{{ st_drive_tag }}` |
 | st_drive_enabled | Triggers the installation of the drive application. | bool | no | `False` |
 | st_drive_dir | Remote path to the base directory for drive app. | str | no | `/opt/drive/drive` |
 | st_drive_port | The host published port for the drive caddy edge. | str | no | `50100` |

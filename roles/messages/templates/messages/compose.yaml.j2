@@ -5,7 +5,7 @@ name: messages
 services:
   frontend:
     container_name: messages-frontend
-    image: "{{ st_messages_frontend_image }}:{{ st_messages_tag }}"
+    image: "{{ st_messages_frontend_image }}:{{ st_messages_frontend_tag }}"
     env_file: ./frontend_env
     ports:
       - "{{ st_messages_port }}:8080"
@@ -15,7 +15,7 @@ services:
 
   backend:
     container_name: messages-backend
-    image: "{{ st_messages_backend_image }}:{{ st_messages_tag }}"
+    image: "{{ st_messages_backend_image }}:{{ st_messages_backend_tag }}"
     env_file: ./backend_env
 {% if st_messages_backend_secret_files | length > 0 %}
     environment:

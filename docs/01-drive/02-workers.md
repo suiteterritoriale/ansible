@@ -4,6 +4,8 @@ Celery background workers for the Drive application. Processes asynchronous task
 with a Celery entrypoint. The worker runs Celery beat embedded. Set `st_drive_workers_beat_enabled`
 to `false` to stop beat on a host.
 
+The workers unit uses `st_drive_backend_tag`. Set an override of this variable in a variables file that the backend play and the workers play both read.
+
 ## Container Stack
 
 ```text

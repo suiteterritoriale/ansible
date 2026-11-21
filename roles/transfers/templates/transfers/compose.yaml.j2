@@ -5,7 +5,7 @@ name: transfers
 services:
   frontend:
     container_name: transfers-frontend
-    image: "{{ st_transfers_frontend_image }}:{{ st_transfers_tag }}"
+    image: "{{ st_transfers_frontend_image }}:{{ st_transfers_frontend_tag }}"
     env_file: ./frontend_env
     ports:
       - "{{ st_transfers_port }}:8080"
@@ -20,7 +20,7 @@ services:
 
   backend:
     container_name: transfers-backend
-    image: "{{ st_transfers_backend_image }}:{{ st_transfers_tag }}"
+    image: "{{ st_transfers_backend_image }}:{{ st_transfers_backend_tag }}"
     env_file: ./backend_env
     # gunicorn binds 0.0.0.0:8000; the (debian runtime-prod) image ships its own
     # working HEALTHCHECK (python urllib GET :8000/__heartbeat__/ with the Host

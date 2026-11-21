@@ -129,7 +129,9 @@ variable reference.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `st_transfers_enabled` | Enable Transfers (frontend + backend) | `false` |
-| `st_transfers_tag` | Docker image tag (backend & frontend) | see REFERENCE.md |
+| `st_transfers_tag` | Docker image tag, the default of the per-image tags | see REFERENCE.md |
+| `st_transfers_frontend_tag` | Docker image tag of the frontend | `{{ st_transfers_tag }}` |
+| `st_transfers_backend_tag` | Docker image tag of the backend and the workers | `{{ st_transfers_tag }}` |
 | `st_transfers_port` | Host port (maps to the frontend Caddy 8080) | `50700` |
 | `st_transfers_uid` | Unix UID for the transfers user | `1107` |
 | `st_transfers_backend_env` | Backend environment content | _(empty)_ |
@@ -137,6 +139,8 @@ variable reference.
 | `st_transfers_backend_run_migrations` | Run DB migrations on deploy | `true` |
 | `st_transfers_workers_enabled` | Enable the dramatiq worker unit | `false` |
 | `st_transfers_rollback_enabled` | Rollback on failure | `false` |
+
+> Set a per-image tag only to deploy a rebuild of one image, for example `st_transfers_frontend_tag: 0.5.0-1`. Remove the override before you upgrade the collection or change `st_transfers_tag`.
 
 ## Network & Ports
 
@@ -175,6 +179,8 @@ The worker unit (`st_transfers_workers_enabled: true`) runs `python worker.py`: 
 dramatiq worker on a Redis Streams broker, handling transfer expiry, draft cleanup, S3
 orphan detection and invitation delivery. Enable it on the same hosts as the core or on
 dedicated worker hosts (`st-cli` prompts for optional worker IPs at bootstrap).
+
+The workers unit uses `st_transfers_backend_tag`. Set an override of this variable in a variables file that the backend play and the workers play both read.
 
 The periodic schedules run **inside** the worker, as a forked sidecar, and a Redis lock
 elects one worker to fire them. So there is no beat container, and nothing to enable on
@@ -261,7 +267,7 @@ on deploy (gated to the first host of a multi-host unit via
 
 `st_transfers_rollback_enabled` (default `false`) rolls back only at the **config
 level**: on a failed deploy it restores the previous compose/env directory and restarts
-the unit. It does **not** roll back the database. Before upgrading `st_transfers_tag`
+the unit. It does **not** roll back the database. Before upgrading `st_transfers_tag` or `st_transfers_backend_tag`
 across a schema-changing release, **back up the database** and restore it manually if
 you need to revert.
 

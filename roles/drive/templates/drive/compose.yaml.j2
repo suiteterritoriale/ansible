@@ -24,7 +24,7 @@ services:
 
   frontend:
     container_name: drive-frontend
-    image: "{{ st_drive_frontend_image }}:{{ st_drive_tag }}"
+    image: "{{ st_drive_frontend_image }}:{{ st_drive_frontend_tag }}"
     env_file: ./frontend_env
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/"]
@@ -34,7 +34,7 @@ services:
 
   backend:
     container_name: drive-backend
-    image: "{{ st_drive_backend_image }}:{{ st_drive_tag }}"
+    image: "{{ st_drive_backend_image }}:{{ st_drive_backend_tag }}"
     env_file: ./backend_env
 {% if st_drive_backend_secret_files | length > 0 %}
     environment:

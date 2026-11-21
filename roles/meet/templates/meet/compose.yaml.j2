@@ -24,7 +24,7 @@ services:
 
   frontend:
     container_name: meet-frontend
-    image: "{{ st_meet_frontend_image }}:{{ st_meet_tag }}"
+    image: "{{ st_meet_frontend_image }}:{{ st_meet_frontend_tag }}"
     user: 1001:127
     env_file: ./frontend_env
     healthcheck:
@@ -40,7 +40,7 @@ services:
 
   backend:
     container_name: meet-backend
-    image: "{{ st_meet_backend_image }}:{{ st_meet_tag }}"
+    image: "{{ st_meet_backend_image }}:{{ st_meet_backend_tag }}"
     user: 1001:127
     env_file: ./backend_env
 {% if st_meet_backend_secret_files | length > 0 %}

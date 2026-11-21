@@ -5,7 +5,7 @@ name: docs_workers
 services:
   worker:
     container_name: docs-worker
-    image: "{{ st_docs_backend_image }}:{{ st_docs_tag }}"
+    image: "{{ st_docs_backend_image }}:{{ st_docs_backend_tag }}"
     env_file: ./env
 {% if st_docs_workers_secret_files | length > 0 %}
     environment:

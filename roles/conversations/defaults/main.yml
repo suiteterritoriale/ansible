@@ -10,6 +10,12 @@ st_conversations_frontend_image: docker.io/lasuite/conversations-frontend
 st_conversations_backend_image: docker.io/lasuite/conversations-backend
 # Tag of the conversations docker images to deploy.
 st_conversations_tag: v0.0.25
+# Tag of the conversations frontend docker image to deploy.
+# Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_conversations_tag.
+st_conversations_frontend_tag: '{{ st_conversations_tag }}'
+# Tag of the conversations backend docker image to deploy. The workers unit uses the same tag.
+# Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_conversations_tag.
+st_conversations_backend_tag: '{{ st_conversations_tag }}'
 # Triggers the installation of the conversations application.
 st_conversations_enabled: false
 # Remote path to the base directory for conversations app.

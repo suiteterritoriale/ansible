@@ -16,6 +16,8 @@ messages-worker (ghcr.io/suitenumerique/messages-backend)
 The worker uses the same Docker image as the messages backend, but runs the Celery worker process instead of the
 Django web server.
 
+The workers unit uses `st_messages_backend_tag`. Set an override of this variable in a variables file that the backend play and the workers play both read.
+
 ## Prerequisites
 
 | Requirement | Value |

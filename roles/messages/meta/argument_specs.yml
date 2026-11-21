@@ -28,6 +28,18 @@ argument_specs:
         description: "Tag of the messages docker images to deploy."
         # renovate: datasource=github-releases depName=suitenumerique/messages versioning=semver extractVersion=^v(?<version>.+)$
         default: "0.10.0"
+      st_messages_frontend_tag:
+        type: "str"
+        description:
+          - "Tag of the messages frontend docker image to deploy."
+          - "Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_messages_tag."
+        default: "{{ st_messages_tag }}"
+      st_messages_backend_tag:
+        type: "str"
+        description:
+          - "Tag of the messages backend docker image to deploy. The workers unit uses the same tag."
+          - "Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_messages_tag."
+        default: "{{ st_messages_tag }}"
       st_messages_enabled:
         type: "bool"
         description: "Triggers the installation of the messages application."

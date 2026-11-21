@@ -52,7 +52,9 @@ See [roles/messages/REFERENCE.md](../../roles/messages/REFERENCE.md) for the com
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `st_messages_enabled` | Enable the messages app | `false` |
-| `st_messages_tag` | Docker image tag | see REFERENCE.md |
+| `st_messages_tag` | Docker image tag, the default of the per-image tags | see REFERENCE.md |
+| `st_messages_frontend_tag` | Docker image tag of the frontend | `{{ st_messages_tag }}` |
+| `st_messages_backend_tag` | Docker image tag of the backend and the workers | `{{ st_messages_tag }}` |
 | `st_messages_dir` | Application directory | `/opt/messages/messages` |
 | `st_messages_uid` | Unix UID for the messages user | `1104` |
 | `st_messages_port` | Host port for frontend | `50400` |
@@ -60,6 +62,8 @@ See [roles/messages/REFERENCE.md](../../roles/messages/REFERENCE.md) for the com
 | `st_messages_frontend_env` | Frontend environment content | _(empty)_ |
 | `st_messages_backend_run_migrations` | Run Django migrations on deploy | `true` |
 | `st_messages_rollback_enabled` | Rollback on failure | `false` |
+
+> Set a per-image tag only to deploy a rebuild of one image, for example `st_messages_frontend_tag: 0.10.0-1`. Remove the override before you upgrade the collection or change `st_messages_tag`.
 
 ## Network & Ports
 

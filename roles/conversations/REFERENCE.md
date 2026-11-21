@@ -26,6 +26,8 @@ Installs and configures the Conversations application from La Suite Territoriale
 | st_conversations_frontend_image | Image repository for the conversations frontend. | str | no | `docker.io/lasuite/conversations-frontend` |
 | st_conversations_backend_image | Image repository for the conversations backend. | str | no | `docker.io/lasuite/conversations-backend` |
 | st_conversations_tag | Tag of the conversations docker images to deploy. | str | no | `v0.0.25` |
+| st_conversations_frontend_tag | Tag of the conversations frontend docker image to deploy. Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_conversations_tag. | str | no | `{{ st_conversations_tag }}` |
+| st_conversations_backend_tag | Tag of the conversations backend docker image to deploy. The workers unit uses the same tag. Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_conversations_tag. | str | no | `{{ st_conversations_tag }}` |
 | st_conversations_enabled | Triggers the installation of the conversations application. | bool | no | `False` |
 | st_conversations_dir | Remote path to the base directory for conversations app. | str | no | `/opt/conversations/conversations` |
 | st_conversations_port | The host published port for the conversations caddy edge. | str | no | `50900` |

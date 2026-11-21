@@ -24,7 +24,7 @@ services:
 
   frontend:
     container_name: conversations-frontend
-    image: "{{ st_conversations_frontend_image }}:{{ st_conversations_tag }}"
+    image: "{{ st_conversations_frontend_image }}:{{ st_conversations_frontend_tag }}"
     # Same USER 1001:127:-1000 as the backend image.
     user: 1001:127
     healthcheck:
@@ -35,7 +35,7 @@ services:
 
   backend:
     container_name: conversations-backend
-    image: "{{ st_conversations_backend_image }}:{{ st_conversations_tag }}"
+    image: "{{ st_conversations_backend_image }}:{{ st_conversations_backend_tag }}"
     # The published image sets USER 1001:127:-1000 (upstream CI bug). Podman rejects that gid.
     user: 1001:127
     env_file: ./backend_env

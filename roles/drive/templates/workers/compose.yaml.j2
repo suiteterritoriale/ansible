@@ -5,7 +5,7 @@ name: drive_workers
 services:
   worker:
     container_name: drive-worker
-    image: "{{ st_drive_backend_image }}:{{ st_drive_tag }}"
+    image: "{{ st_drive_backend_image }}:{{ st_drive_backend_tag }}"
     env_file: ./env
 {% if st_drive_workers_secret_files | length > 0 %}
     environment:

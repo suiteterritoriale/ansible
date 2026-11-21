@@ -6,6 +6,8 @@ schedule from three env vars (upstream release after `v0.0.25`). Set
 `st_conversations_workers_beat_enabled` to `false` to stop beat on a host. See
 [Periodic Jobs](01-conversations.md#periodic-jobs).
 
+The workers unit uses `st_conversations_backend_tag`. Set an override of this variable in a variables file that the backend play and the workers play both read.
+
 ## Features That Run on the Workers
 
 In `Production`, the backend does not run Celery tasks in-process. It queues them in Redis.

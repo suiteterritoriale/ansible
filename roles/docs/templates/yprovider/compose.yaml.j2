@@ -5,7 +5,7 @@ name: docs_yprovider
 services:
   y-provider:
     container_name: docs-yprovider
-    image: "{{ st_docs_yprovider_image }}:{{ st_docs_tag }}"
+    image: "{{ st_docs_yprovider_image }}:{{ st_docs_yprovider_tag }}"
     env_file: ./env
     ports:
       - "{{ st_docs_yprovider_port }}:4444"

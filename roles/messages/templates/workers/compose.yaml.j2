@@ -5,7 +5,7 @@ name: messages_workers
 services:
   worker:
     container_name: messages-worker
-    image: "{{ st_messages_backend_image }}:{{ st_messages_tag }}"
+    image: "{{ st_messages_backend_image }}:{{ st_messages_backend_tag }}"
     env_file: ./env
 {% if st_messages_workers_secret_files | length > 0 %}
     environment:

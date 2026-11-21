@@ -4,6 +4,8 @@ Celery background workers for the Docs application. Processes asynchronous tasks
 backend image with a Celery entrypoint. Upstream Docs has no beat schedule, so this unit runs a
 plain worker, no `--beat`.
 
+The workers unit uses `st_docs_backend_tag`. Set an override of this variable in a variables file that the backend play and the workers play both read.
+
 ## Features That Run on the Workers
 
 In `Production`, the backend never executes Celery tasks in-process — it queues them in Redis.

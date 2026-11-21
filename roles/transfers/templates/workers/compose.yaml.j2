@@ -5,7 +5,7 @@ name: transfers_workers
 services:
   worker:
     container_name: transfers-worker
-    image: "{{ st_transfers_backend_image }}:{{ st_transfers_tag }}"
+    image: "{{ st_transfers_backend_image }}:{{ st_transfers_backend_tag }}"
     env_file: ./env
     # Dramatiq worker; it forks the periodic scheduler as a sidecar, and a Redis
     # lock lets one worker fire the schedules, so there is no beat container and

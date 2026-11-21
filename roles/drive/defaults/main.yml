@@ -10,6 +10,12 @@ st_drive_frontend_image: docker.io/lasuite/drive-frontend
 st_drive_backend_image: docker.io/lasuite/drive-backend
 # Tag of the drive docker images to deploy.
 st_drive_tag: v0.25.3
+# Tag of the drive frontend docker image to deploy.
+# Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_drive_tag.
+st_drive_frontend_tag: '{{ st_drive_tag }}'
+# Tag of the drive backend docker image to deploy. The workers unit uses the same tag.
+# Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_drive_tag.
+st_drive_backend_tag: '{{ st_drive_tag }}'
 # Triggers the installation of the drive application.
 st_drive_enabled: false
 # Remote path to the base directory for drive app.

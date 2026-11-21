@@ -59,7 +59,9 @@ reference.
 |----------|-------------|---------|
 | `st_docs_enabled` | Enable the docs app | `false` |
 | `st_docs_public_host` | Public hostname for the app | **(required)** |
-| `st_docs_tag` | Docker image tag (shared by frontend, backend, yprovider) | `v5.4.1` |
+| `st_docs_tag` | Docker image tag, the default of the per-image tags | `v5.6.1` |
+| `st_docs_frontend_tag` | Docker image tag of the frontend | `{{ st_docs_tag }}` |
+| `st_docs_backend_tag` | Docker image tag of the backend and the workers | `{{ st_docs_tag }}` |
 | `st_docs_dir` | Application directory | `/opt/docs/docs` |
 | `st_docs_uid` | Unix UID for the docs user | `1106` |
 | `st_docs_port` | Host port for the caddy edge | `50600` |
@@ -68,6 +70,8 @@ reference.
 | `st_docs_frontend_logo_src` | Local path to an optional custom logo (svg) | _(unset)_ |
 | `st_docs_theme_customization_src` | Local path to an optional theme customization JSON | _(unset)_ |
 | `st_docs_backend_run_migrations` | Run Django migrations on deploy | `true` |
+
+> Set a per-image tag only to deploy a rebuild of one image, for example `st_docs_frontend_tag: v5.6.1-1`. Remove the override before you upgrade the collection or change `st_docs_tag`.
 
 ## Network & Ports
 

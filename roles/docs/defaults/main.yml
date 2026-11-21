@@ -18,6 +18,15 @@ st_docs_backend_image: docker.io/lasuite/impress-backend
 st_docs_yprovider_image: docker.io/lasuite/impress-y-provider
 # Tag of the docs docker images to deploy.
 st_docs_tag: v5.6.1
+# Tag of the docs frontend docker image to deploy.
+# Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_docs_tag.
+st_docs_frontend_tag: '{{ st_docs_tag }}'
+# Tag of the docs backend docker image to deploy. The workers unit uses the same tag.
+# Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_docs_tag.
+st_docs_backend_tag: '{{ st_docs_tag }}'
+# Tag of the docs y-provider docker image to deploy.
+# Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_docs_tag.
+st_docs_yprovider_tag: '{{ st_docs_tag }}'
 # Local path to the custom template to use for docs backend env file.
 st_docs_backend_env_template: docs/backend_env.j2
 # Content of the default backend_env_template, not used if st_docs_backend_env_template is defined.

@@ -30,6 +30,9 @@ Installs and configures the docs application from La Suite Territoriale on Debia
 | st_docs_backend_image | Image repository for the docs backend. | str | no | `docker.io/lasuite/impress-backend` |
 | st_docs_yprovider_image | Image repository for the docs y-provider collaboration server. | str | no | `docker.io/lasuite/impress-y-provider` |
 | st_docs_tag | Tag of the docs docker images to deploy. | str | no | `v5.6.1` |
+| st_docs_frontend_tag | Tag of the docs frontend docker image to deploy. Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_docs_tag. | str | no | `{{ st_docs_tag }}` |
+| st_docs_backend_tag | Tag of the docs backend docker image to deploy. The workers unit uses the same tag. Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_docs_tag. | str | no | `{{ st_docs_tag }}` |
+| st_docs_yprovider_tag | Tag of the docs y-provider docker image to deploy. Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_docs_tag. | str | no | `{{ st_docs_tag }}` |
 | st_docs_backend_env_template | Local path to the custom template to use for docs backend env file. | str | no | `docs/backend_env.j2` |
 | st_docs_backend_env | Content of the default backend_env_template, not used if st_docs_backend_env_template is defined. | str | no |  |
 | st_docs_backend_secret_files | Secrets that the container reads from files. Each item has the key "env" (the variable name in upper case) and one of the keys "src" (local template) or "content" (inline value). The role writes the file "secrets/<env>" in the application directory. The role mounts the "secrets" directory read-only at /run/secrets. The role sets "<ENV>_FILE" in the compose environment. The "<ENV>_FILE" variable has priority over the same variable in the env content. | list of `dict` | no | `[]` |

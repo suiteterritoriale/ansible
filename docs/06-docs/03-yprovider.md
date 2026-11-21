@@ -43,10 +43,13 @@ reference.
 | `st_docs_yprovider_enabled` | Enable the yprovider unit | `false` |
 | `st_docs_yprovider_dir` | Application directory | `/opt/docs/yprovider` |
 | `st_docs_yprovider_port` | Host port for the yprovider container | `50601` |
-| `st_docs_tag` | Docker image tag, shared with the core images | `v5.4.1` |
+| `st_docs_tag` | Docker image tag, the default of `st_docs_yprovider_tag` | `v5.6.1` |
+| `st_docs_yprovider_tag` | Docker image tag of the y-provider | `{{ st_docs_tag }}` |
 | `st_docs_yprovider_env` | Environment content | _(empty)_ |
 | `st_docs_yprovider_rollback_enabled` | Rollback on failure | `false` |
 | `CADDY_YPROVIDER_ENDPOINTS` (in `st_docs_caddy_env`) | Space-separated `host:port` yprovider upstreams, set on the **core** side, consumed by the caddy `/collaboration/*` route | **(required)** |
+
+> Set `st_docs_yprovider_tag` only to deploy a rebuild of the y-provider image. Remove the override before you upgrade the collection or change `st_docs_tag`.
 
 ## Network & Ports
 

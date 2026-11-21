@@ -54,7 +54,9 @@ See [roles/meet/REFERENCE.md](../../roles/meet/REFERENCE.md) for the complete va
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `st_meet_enabled` | Enable the meet app | `false` |
-| `st_meet_tag` | Docker image tag | see REFERENCE.md |
+| `st_meet_tag` | Docker image tag, the default of the per-image tags | see REFERENCE.md |
+| `st_meet_frontend_tag` | Docker image tag of the frontend | `{{ st_meet_tag }}` |
+| `st_meet_backend_tag` | Docker image tag of the backend | `{{ st_meet_tag }}` |
 | `st_meet_dir` | Application directory | `/opt/meet/meet` |
 | `st_meet_uid` | Unix UID for the meet user | `1103` |
 | `st_meet_port` | Host port for the caddy edge | `50300` |
@@ -63,6 +65,8 @@ See [roles/meet/REFERENCE.md](../../roles/meet/REFERENCE.md) for the complete va
 | `st_meet_caddy_env` | Caddy env content: `CADDY_S3_PROTOCOL`, `CADDY_S3_HOST`, `CADDY_S3_BUCKET` for the media proxy, plus optional `CADDY_ADMIN_IP_ALLOWLIST` / `CADDY_TRUSTED_PROXIES` | _(empty, required keys)_ |
 | `st_meet_backend_run_migrations` | Run Django migrations on deploy | `true` |
 | `st_meet_rollback_enabled` | Rollback on failure | `false` |
+
+> Set a per-image tag only to deploy a rebuild of one image, for example `st_meet_frontend_tag: v1.36.3-1`. Remove the override before you upgrade the collection or change `st_meet_tag`.
 
 ## Network & Ports
 

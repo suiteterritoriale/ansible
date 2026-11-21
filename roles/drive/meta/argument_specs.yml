@@ -31,6 +31,18 @@ argument_specs:
         description: "Tag of the drive docker images to deploy."
         # renovate: datasource=github-releases depName=suitenumerique/drive versioning=semver
         default: "v0.25.3"
+      st_drive_frontend_tag:
+        type: "str"
+        description:
+          - "Tag of the drive frontend docker image to deploy."
+          - "Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_drive_tag."
+        default: "{{ st_drive_tag }}"
+      st_drive_backend_tag:
+        type: "str"
+        description:
+          - "Tag of the drive backend docker image to deploy. The workers unit uses the same tag."
+          - "Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_drive_tag."
+        default: "{{ st_drive_tag }}"
       st_drive_enabled:
         type: "bool"
         description: "Triggers the installation of the drive application."

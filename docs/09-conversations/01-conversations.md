@@ -53,7 +53,9 @@ See [roles/conversations/REFERENCE.md](../../roles/conversations/REFERENCE.md) f
 |----------|-------------|---------|
 | `st_conversations_enabled` | Enable the conversations app | `false` |
 | `st_conversations_public_host` | Public hostname for the app | **(required)** |
-| `st_conversations_tag` | Docker image tag | `v0.0.25` |
+| `st_conversations_tag` | Docker image tag, the default of the per-image tags | `v0.0.25` |
+| `st_conversations_frontend_tag` | Docker image tag of the frontend | `{{ st_conversations_tag }}` |
+| `st_conversations_backend_tag` | Docker image tag of the backend and the workers | `{{ st_conversations_tag }}` |
 | `st_conversations_dir` | Application directory | `/opt/conversations/conversations` |
 | `st_conversations_uid` | Unix UID for the conversations user | `1109` |
 | `st_conversations_port` | Host port for the caddy edge | `50900` |
@@ -62,6 +64,8 @@ See [roles/conversations/REFERENCE.md](../../roles/conversations/REFERENCE.md) f
 | `st_conversations_backend_run_migrations` | Run Django migrations on deploy | `true` |
 | `st_conversations_llm_configuration_src` | Local path to an optional LLM catalog JSON | _(unset)_ |
 | `st_conversations_theme_customization_src` | Local path to an optional theme customization JSON | _(unset)_ |
+
+> Set a per-image tag only to deploy a rebuild of one image, for example `st_conversations_frontend_tag: v0.0.25-1`. Remove the override before you upgrade the collection or change `st_conversations_tag`.
 
 ## Network & Ports
 

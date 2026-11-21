@@ -25,6 +25,8 @@ Installs and configures the Messages application from La Suite Territoriale on D
 | st_messages_frontend_image | Image repository for the messages frontend. | str | no | `ghcr.io/suitenumerique/messages-frontend` |
 | st_messages_backend_image | Image repository for the messages backend. | str | no | `ghcr.io/suitenumerique/messages-backend` |
 | st_messages_tag | Tag of the messages docker images to deploy. | str | no | `0.10.0` |
+| st_messages_frontend_tag | Tag of the messages frontend docker image to deploy. Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_messages_tag. | str | no | `{{ st_messages_tag }}` |
+| st_messages_backend_tag | Tag of the messages backend docker image to deploy. The workers unit uses the same tag. Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_messages_tag. | str | no | `{{ st_messages_tag }}` |
 | st_messages_enabled | Triggers the installation of the messages application. | bool | no | `False` |
 | st_messages_dir | Remote path to the base directory for messages app. | str | no | `/opt/messages/messages` |
 | st_messages_port | The host published port for the messages frontend. | str | no | `50400` |
