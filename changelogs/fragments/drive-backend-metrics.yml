@@ -1,0 +1,2 @@
+minor_changes:
+  - drive - route ``/metrics`` to the backend on the caddy edge, with the public ``Host`` header. A scraper reads it through the load balancer, or on the host at ``127.0.0.1:<st_drive_port>``. The backend serves it only with ``PROMETHEUS_METRICS_ENABLED=true`` and requires the ``PROMETHEUS_API_KEY`` bearer token. Two optional lines of ``st_drive_caddy_env`` control the route - ``CADDY_METRICS_IP_ALLOWLIST`` limits the client IPs (default allows all), and ``CADDY_METRICS_HOST`` sets the ``Host`` header (default ``st_drive_public_host``).

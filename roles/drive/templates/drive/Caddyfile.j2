@@ -96,6 +96,18 @@
 		}
 	}
 
+	# Backend Prometheus metrics, behind the PROMETHEUS_API_KEY bearer token. The caddy_env file
+	# can set CADDY_METRICS_IP_ALLOWLIST (CIDR list: unset allows all, empty denies all) and
+	# CADDY_METRICS_HOST. This Host must pass the Django ALLOWED_HOSTS check.
+	handle /metrics {
+		@denied not client_ip {$CADDY_METRICS_IP_ALLOWLIST:0.0.0.0/0 ::/0}
+		respond @denied 403
+		reverse_proxy drive-backend:8000 {
+			header_up Host "{$CADDY_METRICS_HOST:{{ st_drive_public_host | default('') }}}"
+			header_up X-Forwarded-Proto https
+		}
+	}
+
 	# Frontend SPA (mirrors ingress.yaml / — stock image serves index.html + fallback).
 	handle {
 		reverse_proxy drive-frontend:8080

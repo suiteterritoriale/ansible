@@ -24,6 +24,7 @@ user unit. All sub-apps are disabled by default and must be explicitly enabled.
 ```text
 drive-caddy (docker.io/caddy), published on the host
   ├── /api/*, /external_api/*, /admin, /admin/*, /static/* → drive-backend (docker.io/lasuite/drive-backend)
+  ├── /metrics → drive-backend, with the public Host header (Prometheus metrics)
   ├── /media/preview/* → S3, forward_auth against drive-backend (inline preview)
   ├── /media/* → S3, forward_auth against drive-backend (download, Content-Disposition attachment)
   └── everything else → drive-frontend (docker.io/lasuite/drive-frontend, stock SPA nginx conf)
@@ -58,7 +59,7 @@ See [roles/drive/REFERENCE.md](../../roles/drive/REFERENCE.md) for the complete 
 | `st_drive_uid` | Unix UID for the drive user | `1101` |
 | `st_drive_port` | Host port for the caddy edge | `50100` |
 | `st_drive_backend_env` | Backend environment content | _(empty)_ |
-| `st_drive_caddy_env` | Caddy env content: `CADDY_S3_PROTOCOL`, `CADDY_S3_HOST`, `CADDY_S3_BUCKET` for the media proxy, plus optional `CADDY_ADMIN_IP_ALLOWLIST` / `CADDY_TRUSTED_PROXIES` | _(empty, required keys)_ |
+| `st_drive_caddy_env` | Caddy env content: `CADDY_S3_PROTOCOL`, `CADDY_S3_HOST`, `CADDY_S3_BUCKET` for the media proxy, plus optional `CADDY_ADMIN_IP_ALLOWLIST` / `CADDY_TRUSTED_PROXIES` / `CADDY_METRICS_IP_ALLOWLIST` / `CADDY_METRICS_HOST` | _(empty, required keys)_ |
 | `st_drive_backend_run_migrations` | Run Django migrations on deploy | `true` |
 
 ## Network & Ports
@@ -70,9 +71,69 @@ See [roles/drive/REFERENCE.md](../../roles/drive/REFERENCE.md) for the complete 
 Caddy listens on `50100` inside its own container and is the only container published to the
 host. The frontend and backend are only reachable from caddy via the Podman bridge network.
 
+## Prometheus Metrics
+
+From upstream drive `v0.25.0`, the backend serves Prometheus metrics on `/metrics`. The endpoint is
+off by default.
+
+To turn it on, add `PROMETHEUS_METRICS_ENABLED=true` to your existing `st_drive_backend_env` value.
+Add the `PROMETHEUS_API_KEY` item to your existing `st_drive_backend_secret_files` list. The backend
+does not start when the metrics are on and the key is missing. The scraper sends the key as a
+bearer token.
+
+```yaml
+  - env: PROMETHEUS_API_KEY
+    content: "{{ vault_prometheus_api_key }}"
+```
+
+The workers use the backend env and secret files by default. If you override them, keep the key or
+leave the metrics off.
+
+Caddy routes `/metrics` to the backend and sends the public `Host` header. No other backend setting
+is necessary. You can scrape the endpoint in two ways:
+
+- Through the load balancer, on `https://<public host>/metrics`.
+- On each host, on `http://127.0.0.1:50100/metrics` (the caddy port, `st_drive_port`), for a scraper
+  such as Alloy.
+
+With several hosts, a scrape through the load balancer reaches only one host each time. Scrape each
+host for complete series. The example
+[drive.config.alloy.j2](../99-examples/monitoring/drive.config.alloy.j2) scrapes the host port when
+`vault_prometheus_api_key` is defined.
+
+To check the route on a host, run these commands as the `drive` user:
+
+```bash
+PROMETHEUS_API_KEY=$(cat /opt/drive/drive/secrets/PROMETHEUS_API_KEY)
+curl -s -H "Authorization: Bearer $PROMETHEUS_API_KEY" http://127.0.0.1:50100/metrics | head
+```
+
+Two optional lines of `st_drive_caddy_env` control the `/metrics` route.
+
+| Variable | Default | Description |
+|----------|---------|--------------|
+| `CADDY_METRICS_IP_ALLOWLIST` | `0.0.0.0/0 ::/0` | Space-separated CIDR list of client IPs allowed on `/metrics`. Caddy answers 403 to a denied client. It is independent of `CADDY_ADMIN_IP_ALLOWLIST`. |
+| `CADDY_METRICS_HOST` | `st_drive_public_host` | `Host` header that caddy sends to the backend on `/metrics`. The value must be in `DJANGO_ALLOWED_HOSTS`. Set it only when the backend does not accept `st_drive_public_host`. Do not set it to an empty value. |
+
+> [!IMPORTANT]
+> The route is on the public host. Without `CADDY_METRICS_IP_ALLOWLIST`, the bearer token is its
+> only protection, so use a long random key.
+
+Follow these rules for `CADDY_METRICS_IP_ALLOWLIST`:
+
+- The client IP follows the same rules as for the admin allowlist (see the next section).
+- For a scraper on the host, add the address that caddy sees. Read the `request.client_ip` field
+  of a `/metrics` line in the caddy access log (`podman logs drive-caddy`, as the `drive` user).
+- With rootless podman, caddy can see the same internal address for each connection on the caddy
+  port. If you add this address, each client that reaches the caddy port directly gets access.
+  Make sure that only the load balancer and the host can reach `st_drive_port`.
+- Do not set the list to an empty value. An empty list denies every request to `/metrics`.
+- The caddy port is plain HTTP, so a remote scraper must use the load balancer (TLS).
+
 ## Django Admin IP Allowlist
 
-The caddy edge adds two optional environment variables. Set them as lines in `st_drive_caddy_env`.
+For the Django admin, the caddy edge adds two optional environment variables. Set them as lines in
+`st_drive_caddy_env`.
 
 | Variable | Default | Description |
 |----------|---------|--------------|
@@ -181,6 +242,7 @@ Upstream drive `v0.22.0` supports `_FILE` for these variables (`SecretFileValue`
 - `OIDC_RP_CLIENT_SECRET`: OIDC client secret.
 - `POSTHOG_KEY`: PostHog key.
 - `WOPI_ONLYOFFICE_CONVERT_JWT_SECRET`: JWT secret of the OnlyOffice conversion.
+- `PROMETHEUS_API_KEY`: bearer token of `/metrics` (upstream drive `v0.25.0`+).
 
 Upstream does not support `_FILE` for other variables.
 If you add an item for another variable, the backend ignores the file.

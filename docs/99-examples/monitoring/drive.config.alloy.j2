@@ -28,6 +28,23 @@ prometheus.scrape "default" {
   forward_to = [prometheus.relabel.default.receiver]
 }
 
+{% if vault_prometheus_api_key is defined %}
+// Drive backend /metrics, through the caddy edge on this host.
+// Requires PROMETHEUS_METRICS_ENABLED=true and PROMETHEUS_API_KEY in the backend.
+// vault_prometheus_api_key is the secret that you give to PROMETHEUS_API_KEY.
+// With CADDY_METRICS_IP_ALLOWLIST set, the list must include the address that caddy sees
+// for this host.
+prometheus.scrape "drive_backend" {
+  targets = [
+    { job = "drive-backend", __address__ = "127.0.0.1:50100" },
+  ]
+  bearer_token    = {{ vault_prometheus_api_key | to_json }}
+  scrape_interval = "30s"
+
+  forward_to = [prometheus.relabel.default.receiver]
+}
+
+{% endif %}
 // Relabel the 'instance' label to hostname, needed for some exporters
 prometheus.relabel "default" {
   forward_to = [prometheus.remote_write.default.receiver]
