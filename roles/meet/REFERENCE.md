@@ -42,14 +42,14 @@ Installs and configures the meet application from La Suite Territoriale on Debia
 | st_meet_caddy_env | Content of the default caddy_env_template, not used if st_meet_caddy_env_template is defined. The Caddyfile requires CADDY_S3_PROTOCOL, CADDY_S3_HOST and CADDY_S3_BUCKET. Optional: CADDY_ADMIN_IP_ALLOWLIST (space-separated CIDR list of client IPs allowed on the Django admin URL, default allows all) and CADDY_TRUSTED_PROXIES (space-separated CIDR list of proxies whose X-Forwarded-For sets the client IP, default private_ranges). | str | no |  |
 | st_meet_compose_template | Local path to the custom template to use for meet compose file. | str | no | `meet/compose.yaml.j2` |
 | st_meet_caddy_image | Image repository for the meet caddy reverse-proxy. | str | no | `docker.io/caddy` |
-| st_meet_caddy_tag | The tag of the caddy docker image to use. See https://hub.docker.com/_/caddy/tags. | str | no | `2.11.7-alpine` |
+| st_meet_caddy_tag | The tag of the caddy docker image to use. See https://hub.docker.com/_/caddy/tags. | str | no | `2.11.9-alpine` |
 | st_meet_rollback_enabled | Whether or not to trigger the rollback tasks if the meet deployment fails. | bool | no | `False` |
 | st_meet_livekit_caddyl4_image | Image repository for livekit caddyl4. | str | no | `docker.io/livekit/caddyl4` |
 | st_meet_livekit_image | Image repository for the livekit server. | str | no | `docker.io/livekit/livekit-server` |
 | st_meet_livekit_valkey_image | Image repository for the livekit valkey. | str | no | `docker.io/valkey/valkey` |
 | st_meet_livekit_tag | Tag of the livekit docker image to deploy. | str | no | `v1.13.11` |
 | st_meet_livekit_caddyl4_tag | Tag of the livekit caddyl4 docker image to deploy. | str | no | `v2.11.3` |
-| st_meet_livekit_valkey_tag | Tag of the valkey docker image to deploy for livekit when using the full compose template. | str | no | `9.1.2` |
+| st_meet_livekit_valkey_tag | Tag of the valkey docker image to deploy for livekit when using the full compose template. | str | no | `9.2.0` |
 | st_meet_livekit_valkey_enabled | Deploy a local valkey in the livekit compose (single-node co-located egress). Set false when using an external shared redis. | bool | no | `True` |
 | st_meet_livekit_redis_address | Redis/valkey address (host:port) the livekit server connects to. Defaults to the local valkey; set to a shared external redis when egress runs on a different node. | str | no | `127.0.0.1:6379` |
 | st_meet_livekit_redis_username | Username for the external shared redis used by livekit and egress. Not used by the co-located local valkey, which has no auth. | str | no |  |

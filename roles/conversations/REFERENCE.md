@@ -39,7 +39,7 @@ Installs and configures the Conversations application from La Suite Territoriale
 | st_conversations_caddy_env_template | Local path to the custom template to use for conversations caddy env file. | str | no | `conversations/caddy_env.j2` |
 | st_conversations_caddy_env | Content of the default caddy_env_template, not used if st_conversations_caddy_env_template is defined. Every key is optional: CADDY_ADMIN_IP_ALLOWLIST (space-separated CIDR list of client IPs allowed on the Django admin URL, default allows all) and CADDY_TRUSTED_PROXIES (space-separated CIDR list of proxies whose X-Forwarded-For sets the client IP, default private_ranges). | str | no |  |
 | st_conversations_caddy_image | Image repository for the conversations caddy reverse-proxy. | str | no | `docker.io/caddy` |
-| st_conversations_caddy_tag | The tag of the caddy docker image to use. See https://hub.docker.com/_/caddy/tags. | str | no | `2.11.7-alpine` |
+| st_conversations_caddy_tag | The tag of the caddy docker image to use. See https://hub.docker.com/_/caddy/tags. | str | no | `2.11.9-alpine` |
 | st_conversations_llm_configuration_src | Local path of an LLM model catalog JSON. When set, the role mounts it read-only over `/app/conversations/configuration/llm/default.json` in the backend container. The backend caches the catalog at boot. | str | no |  |
 | st_conversations_theme_customization_src | Local path of a theme customization JSON. When set, the role mounts it read-only over `/app/conversations/configuration/theme/default.json` in the backend container. | str | no |  |
 | st_conversations_workers_enabled | Triggers the installation of the conversations workers | bool | no | `False` |

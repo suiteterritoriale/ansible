@@ -79,11 +79,11 @@ Installs and configures the Messages application from La Suite Territoriale on D
 | st_messages_mpa_dir | Remote path to the base directory for mpa app. | str | no | `/opt/messages/mpa` |
 | st_messages_mpa_auth_bearer | Add a caddy container in front of the rspamd worker with a simple authorization check. The value of this variable should then be used as a Bearer token when calling the /checkv2 rspamd endpoint. | str | no |  |
 | st_messages_mpa_caddy_image | Image repository for the mpa caddy. | str | no | `docker.io/caddy` |
-| st_messages_mpa_caddy_tag | The tag of the caddy docker image to use. See https://hub.docker.com/_/caddy/tags. | str | no | `2.11.7-alpine` |
+| st_messages_mpa_caddy_tag | The tag of the caddy docker image to use. See https://hub.docker.com/_/caddy/tags. | str | no | `2.11.9-alpine` |
 | st_messages_mpa_caddy_port | The host published port for the caddy /checkv2 endpoint. | str | no | `50402` |
 | st_messages_mpa_caddy_healthcheck_port | The host published port for the caddy /healthcheck endpoint. | str | no | `50403` |
 | st_messages_mpa_rspamd_image | Image repository for the mpa rspamd. | str | no | `docker.io/rspamd/rspamd` |
-| st_messages_mpa_rspamd_tag | The tag of the rspamd docker image to use. See https://hub.docker.com/r/rspamd/rspamd/tags. | str | no | `4.2.2` |
+| st_messages_mpa_rspamd_tag | The tag of the rspamd docker image to use. See https://hub.docker.com/r/rspamd/rspamd/tags. | str | no | `4.3.0` |
 | st_messages_mpa_rspamd_controller_password | Password of the rspamd controller webui. | str | no |  |
 | st_messages_mpa_rspamd_controller_port | The host published port for the rspamd controller/webui. | str | no | `50404` |
 | st_messages_mpa_rspamd_add_header_score | The score triggering the add_header action on Messages. | str | no | `4` |
@@ -109,7 +109,7 @@ Installs and configures the Messages application from La Suite Territoriale on D
 | st_messages_mpa_exav_env_template | Local path to the exav env file template. | str | no | `mpa/exav_env.j2` |
 | st_messages_mpa_exav_env | Content of the exav env file: extra `EXAV_*` lines, for example `EXAV_WORKERS` or `EXAV_MAX_PROCESS_BYTES`. The compose file sets `EXAV_DB_URL` from `st_messages_mpa_exav_db_url`. | str | no |  |
 | st_messages_mpa_valkey_image | Image repository for the mpa valkey. | str | no | `docker.io/valkey/valkey` |
-| st_messages_mpa_valkey_tag | The tag of the valkey docker image to use. See https://hub.docker.com/r/valkey/valkey/tags. | str | no | `9.1.2` |
+| st_messages_mpa_valkey_tag | The tag of the valkey docker image to use. See https://hub.docker.com/r/valkey/valkey/tags. | str | no | `9.2.0` |
 | st_messages_mpa_rollback_enabled | Whether or not to trigger the rollback tasks if the mpa deployment fails. | bool | no | `False` |
 | st_messages_mpa_compose_template | Local path to the custom template to use for mpa compose file. | str | no | `mpa/compose.yaml.j2` |
 | st_messages_mpa_timeout | Seconds the systemd unit waits for every container of the mpa stack to report healthy. The first exav start downloads the prebuilt database before it reports healthy. | int | no | `300` |

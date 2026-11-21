@@ -26,7 +26,7 @@ Installs and configures the projects application from La Suite Territoriale on D
 | st_projects_dir | Remote path to the base directory for projects app. | str | no | `/opt/projects/projects` |
 | st_projects_port | The host published port for projects (mapped to the container's 1337). | str | no | `50500` |
 | st_projects_image | Image repository for projects. | str | no | `docker.io/lasuite/projects` |
-| st_projects_tag | Tag of the projects docker image to deploy. | str | no | `1.27.10` |
+| st_projects_tag | Tag of the projects docker image to deploy. | str | no | `1.27.13` |
 | st_projects_env_template | Local path to the custom template to use for projects env file. | str | no | `projects/env.j2` |
 | st_projects_env | Content of the default env_template, not used if st_projects_env_template is defined. | str | no |  |
 | st_projects_compose_template | Local path to the custom template to use for projects compose file. | str | no | `projects/compose.yaml.j2` |

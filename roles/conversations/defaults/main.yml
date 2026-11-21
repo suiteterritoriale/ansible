@@ -40,7 +40,7 @@ st_conversations_caddy_env: ''
 st_conversations_caddy_image: docker.io/caddy
 # The tag of the caddy docker image to use.
 # See https://hub.docker.com/_/caddy/tags.
-st_conversations_caddy_tag: 2.11.7-alpine
+st_conversations_caddy_tag: 2.11.9-alpine
 # Local path of an LLM model catalog JSON. When set, the role mounts it read-only over `/app/conversations/configuration/llm/default.json` in the backend container. The backend caches the catalog at boot.
 st_conversations_llm_configuration_src: ''
 # Local path of a theme customization JSON. When set, the role mounts it read-only over `/app/conversations/configuration/theme/default.json` in the backend container.

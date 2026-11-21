@@ -112,7 +112,7 @@ argument_specs:
           - "The tag of the caddy docker image to use."
           - "See https://hub.docker.com/_/caddy/tags."
         # renovate: datasource=docker depName=docker.io/caddy
-        default: "2.11.7-alpine"
+        default: "2.11.9-alpine"
       st_meet_rollback_enabled:
         type: "bool"
         description: "Whether or not to trigger the rollback tasks if the meet deployment fails."
@@ -143,7 +143,7 @@ argument_specs:
         type: "str"
         description: "Tag of the valkey docker image to deploy for livekit when using the full compose template."
         # renovate: datasource=docker depName=docker.io/valkey/valkey
-        default: "9.1.2"
+        default: "9.2.0"
       st_meet_livekit_valkey_enabled:
         type: "bool"
         description: "Deploy a local valkey in the livekit compose (single-node co-located egress). Set false when using an external shared redis."

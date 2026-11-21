@@ -42,7 +42,7 @@ Installs and configures the Drive application from La Suite Territoriale on Debi
 | st_drive_caddy_env_template | Local path to the custom template to use for drive caddy env file. | str | no | `drive/caddy_env.j2` |
 | st_drive_caddy_env | Content of the default caddy_env_template, not used if st_drive_caddy_env_template is defined. The Caddyfile requires CADDY_S3_PROTOCOL, CADDY_S3_HOST and CADDY_S3_BUCKET. Optional: CADDY_ADMIN_IP_ALLOWLIST (space-separated CIDR list of client IPs allowed on the Django admin URL, default allows all), CADDY_TRUSTED_PROXIES (space-separated CIDR list of proxies whose X-Forwarded-For sets the client IP, default private_ranges), CADDY_METRICS_IP_ALLOWLIST (space-separated CIDR list of client IPs allowed on /metrics, default allows all) and CADDY_METRICS_HOST (Host header that caddy sends to the backend on /metrics, default st_drive_public_host). | str | no |  |
 | st_drive_caddy_image | Image repository for the drive caddy reverse-proxy. | str | no | `docker.io/caddy` |
-| st_drive_caddy_tag | The tag of the caddy docker image to use. See https://hub.docker.com/_/caddy/tags. | str | no | `2.11.7-alpine` |
+| st_drive_caddy_tag | The tag of the caddy docker image to use. See https://hub.docker.com/_/caddy/tags. | str | no | `2.11.9-alpine` |
 | st_drive_workers_enabled | Triggers the installation of the drive workers | bool | no | `False` |
 | st_drive_workers_dir | Remote path to the base directory for drive workers. | str | no | `/opt/drive/workers` |
 | st_drive_workers_env_template | Local path to the custom template to use for drive workers env file. | str | no | `workers/env.j2` |

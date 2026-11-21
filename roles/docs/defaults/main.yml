@@ -49,7 +49,7 @@ st_docs_compose_template: docs/compose.yaml.j2
 st_docs_caddy_image: docker.io/caddy
 # The tag of the caddy docker image to use.
 # See https://hub.docker.com/_/caddy/tags.
-st_docs_caddy_tag: 2.11.7-alpine
+st_docs_caddy_tag: 2.11.9-alpine
 # Image repository for the docspec conversion service.
 st_docs_docspec_image: ghcr.io/docspecio/api
 # Tag of the docspec docker image to deploy.

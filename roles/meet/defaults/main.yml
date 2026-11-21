@@ -46,7 +46,7 @@ st_meet_compose_template: meet/compose.yaml.j2
 st_meet_caddy_image: docker.io/caddy
 # The tag of the caddy docker image to use.
 # See https://hub.docker.com/_/caddy/tags.
-st_meet_caddy_tag: 2.11.7-alpine
+st_meet_caddy_tag: 2.11.9-alpine
 # Whether or not to trigger the rollback tasks if the meet deployment fails.
 st_meet_rollback_enabled: false
 # Image repository for livekit caddyl4.
@@ -60,7 +60,7 @@ st_meet_livekit_tag: v1.13.11
 # Tag of the livekit caddyl4 docker image to deploy.
 st_meet_livekit_caddyl4_tag: v2.11.3
 # Tag of the valkey docker image to deploy for livekit when using the full compose template.
-st_meet_livekit_valkey_tag: 9.1.2
+st_meet_livekit_valkey_tag: 9.2.0
 # Deploy a local valkey in the livekit compose (single-node co-located egress). Set false when using an external shared redis.
 st_meet_livekit_valkey_enabled: true
 # Redis/valkey address (host:port) the livekit server connects to. Defaults to the local valkey; set to a shared external redis when egress runs on a different node.

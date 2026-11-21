@@ -21,7 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 # cryptography is a TEST dependency only (differential Ed25519 check in
 # test_keypairs.py) — st-cli itself stays free of crypto/binary deps.
-dev = ["pytest==9.1.1", "pytest-mock==3.17.0", "cryptography==50.0.2"]
+dev = ["pytest==9.2.0", "pytest-mock==3.17.0", "cryptography==50.0.2"]
 ansible = ["ansible-core==2.21.5"]
 # The certifi floor keeps the eMudhra distrust for requests (CVE-2026-111943).
 hashivault = ["hvac==2.4.0", "certifi>=2026.10.19"]

@@ -93,7 +93,7 @@ argument_specs:
           - "The tag of the caddy docker image to use."
           - "See https://hub.docker.com/_/caddy/tags."
         # renovate: datasource=docker depName=docker.io/caddy
-        default: "2.11.7-alpine"
+        default: "2.11.9-alpine"
       st_conversations_llm_configuration_src:
         type: "str"
         description: "Local path of an LLM model catalog JSON. When set, the role mounts it read-only over `/app/conversations/configuration/llm/default.json` in the backend container. The backend caches the catalog at boot."
