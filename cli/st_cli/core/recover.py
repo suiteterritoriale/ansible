@@ -79,6 +79,17 @@ def recover(app: str, env: str, component: str) -> dict:
                 continue
             answers[placeholder] = committed_lines[key]
 
+    spec = meta.secret_files_spec(component)
+    items = data.get(spec["var"]) if spec else None
+    if isinstance(items, list):
+        declared = set(spec["keys"])
+        for item in items:
+            if not hasattr(item, "get") or item.get("env") not in declared:
+                continue
+            # An item with `src` has no content: an empty answer still stops
+            # `_ask_secret` from minting a key that nothing would use.
+            answers.setdefault(item["env"], str(item.get("content", "")))
+
     return answers
 
 
@@ -110,10 +121,25 @@ def recover_cadvisor(app: str, env: str, component: str) -> bool | None:
     return parse_bool(data.get(writer.cadvisor_var(app)))
 
 
-def recover_hosts(app: str, env: str, component: str) -> list[str]:
-    """Recover a unit's committed host IPs (``[]`` if it has none, or doesn't exist)."""
+def recover_hosts(
+    app: str, env: str, component: str, group: str | None = None
+) -> list[str]:
+    """Recover a unit's committed host IPs (``[]`` if it has none, or doesn't exist).
+
+    ``group`` narrows to one inventory group, so a core unit does not return the
+    hosts of its ``[workers]`` group. An absent group falls back to every host
+    except those of the app's workers group, for a core group under another name.
+    """
     try:
-        return tree.read_hosts(app, env, component)
+        hosts = tree.read_hosts(app, env, component, group=group) if group else []
+        if hosts or not group:
+            return hosts or tree.read_hosts(app, env, component)
+        everything = tree.read_hosts(app, env, component)
+        worker = appmeta.load_app(app).worker()
+        if worker is None:
+            return everything
+        workers = set(tree.read_hosts(app, env, component, group=worker.app_name))
+        return [h for h in everything if h not in workers] or everything
     except Exception:
         return []
 

@@ -130,11 +130,15 @@ def generate_keypairs(
         False,
         "--signing-key",
         "-s",
-        help="Mint the webhook signing seed (JWT_SIGNING_KEY) instead of caller keypairs.",
+        help="file-scanner only: mint the webhook signing seed (JWT_SIGNING_KEY) instead of caller keypairs.",
     ),
 ):
-    """Mint Ed25519 caller keypair(s) for APP/ENV (file-scanner JWT auth).
+    """Mint JWT keys for APP/ENV (file-scanner or docs).
 
+    docs: mints the two RSA private keys (JWT_PRIVATE_KEY and
+    YHUB_JWT_PRIVATE_KEY) and prints them with the steps to store them.
+
+    file-scanner: mints Ed25519 caller keypair(s).
     Asks an issuer name per keypair, then prints a wiring summary: the
     iss:pubkey fragments for the scanner's JWT_ISSUER_KEYS and, for each caller,
     the private key to hand over (shown once — st-cli stores no copy).

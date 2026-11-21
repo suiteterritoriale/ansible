@@ -1,0 +1,34 @@
+---
+- name: "Create yhub application."
+  ansible.builtin.import_role:
+    name: suitenumerique.st.podman
+    tasks_from: application.yml
+  vars:
+    st_podman_user: "docs"
+    st_podman_application_name: "yhub"
+    st_podman_application_dir: "{{ st_docs_yhub_dir }}"
+    st_podman_application_rollback_enabled: "{{ st_docs_yhub_rollback_enabled }}"
+    st_podman_application_compose_template: "{{ st_docs_yhub_compose_template }}"
+    st_podman_application_secret_files: "{{ st_docs_yhub_secret_files }}"
+    st_podman_application_secret_files_container_uid: "1000"
+    st_podman_application_files:
+      - src: "{{ st_docs_yhub_env_template }}"
+        dest: "env"
+
+- name: "Create or update the yhub database schema."
+  become: true
+  become_user: "docs"
+  become_method: ansible.builtin.sudo
+  become_flags: "-i"
+  run_once: true
+  register: yhub_init_db_result
+  changed_when: false
+  when: st_docs_yhub_run_init_db
+  retries: 3
+  delay: 10
+  until: yhub_init_db_result.rc == 0
+  ansible.builtin.shell:
+    chdir: "{{ st_docs_yhub_dir }}"
+    cmd: |
+      set -eu
+      podman-compose run --rm --name docs_yhub_init_db yhub node dist/init-db.js --attempts=1

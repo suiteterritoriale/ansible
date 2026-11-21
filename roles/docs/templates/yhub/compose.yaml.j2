@@ -1,0 +1,28 @@
+---
+{{ ansible_managed | comment }}
+
+name: docs_yhub
+services:
+  yhub:
+    container_name: docs-yhub
+    image: "{{ st_docs_yhub_image }}:{{ st_docs_tag }}"
+    env_file: ./env
+{% if st_docs_yhub_secret_files | length > 0 %}
+    environment:
+{% for secret in st_docs_yhub_secret_files %}
+      {{ secret.env }}_FILE: /run/secrets/{{ secret.env }}
+{% endfor %}
+{% endif %}
+    ports:
+      - "{{ st_docs_yhub_port }}:3002"
+    healthcheck:
+      # The image has no shell: the CMD form execs node.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/collaboration/ready/v1').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+{% if st_docs_yhub_secret_files | length > 0 %}
+    volumes:
+      - ./secrets:/run/secrets:ro
+{% endif %}

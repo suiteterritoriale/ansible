@@ -1,18 +1,27 @@
 ---
+- name: "Check the Docs 6 settings."
+  ansible.builtin.import_tasks: deploy/preflight.yml
+  tags: ['always']
+
+- name: "Remove the legacy y-provider unit."
+  ansible.builtin.import_tasks: deploy/yprovider_cleanup.yml
+  when: st_docs_yprovider_legacy_cleanup_enabled
+  tags: ['docs_docs', 'docs_yhub', 'docs_workers', 'docs_yprovider']
+
 - name: "Deploy docs."
   ansible.builtin.import_tasks: deploy/docs.yml
   when: st_docs_enabled
   tags: ['docs_docs']
 
+- name: "Deploy yhub."
+  ansible.builtin.import_tasks: deploy/yhub.yml
+  when: st_docs_yhub_enabled
+  tags: ['docs_yhub']
+
 - name: "Deploy docs workers."
   ansible.builtin.import_tasks: deploy/workers.yml
   when: st_docs_workers_enabled
   tags: ['docs_workers']
-
-- name: "Deploy y-provider."
-  ansible.builtin.import_tasks: deploy/yprovider.yml
-  when: st_docs_yprovider_enabled
-  tags: ['docs_yprovider']
 
 - name: "Create cadvisor application."
   when: st_docs_cadvisor_enabled

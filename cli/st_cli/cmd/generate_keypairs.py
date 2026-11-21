@@ -1,6 +1,10 @@
-"""``st-cli generate-keypairs APP ENV`` — mint Ed25519 keys for file-scanner.
+"""``st-cli generate-keypairs APP ENV`` — mint JWT keys for file-scanner and docs.
 
-Two modes, both pure local keygen followed by a wiring summary:
+For ``docs``, the command mints the two RSA private keys of La Suite Docs v6
+(``JWT_PRIVATE_KEY`` for the backend, ``YHUB_JWT_PRIVATE_KEY`` for yhub) and
+prints them with the steps to store them. It writes nothing.
+
+For ``file-scanner``, two modes, both pure local keygen followed by a wiring summary:
 
 * default — CLI twin of file-scanner's ``deploy/scripts/new-issuer.py``: a small
   questionnaire (issuer name per keypair, loop for several callers). For each
@@ -23,6 +27,7 @@ from __future__ import annotations
 
 from ..core import appmeta, keypairs, manifest, paths, tree, ui
 from ..core.errors import StCliError
+from ..core.models import BACKEND_HASHI_VAULT
 from ..core.prompts import _ask, _confirm
 
 __all__ = ["generate"]
@@ -64,7 +69,7 @@ def _generate_signing_key(meta, app: str, env: str) -> None:
     private, public = keypairs.generate_keypair()
     core_key = meta.core().key
     bootstrapped = paths.vars_path(app, env, core_key).exists()
-    hashi = _backend_kind(app, env) == "hashi_vault"
+    hashi = _backend_kind(app, env) == BACKEND_HASHI_VAULT
 
     if hashi:
         target = "store it in OpenBao, then " + (
@@ -115,17 +120,116 @@ def _generate_signing_key(meta, app: str, env: str) -> None:
     ui.value(public)
 
 
+_DOCS_KEYS = [("JWT_PRIVATE_KEY", "docs"), ("YHUB_JWT_PRIVATE_KEY", "yhub")]
+
+
+def _has_key_item(meta, app: str, env: str, key: str, unit: str) -> bool:
+    spec = meta.secret_files_spec(unit)
+    if not paths.vars_path(app, env, unit).exists():
+        return False
+    items = tree.load_vars(app, env, unit).get(spec["var"])
+    return isinstance(items, list) and any(
+        hasattr(i, "get") and i.get("env") == key for i in items
+    )
+
+
+def _docs_state(meta, app: str, env: str) -> tuple[bool, str]:
+    """Return ``(both keys wired, command that wires the missing one)``.
+
+    A v5 tree has the core ``vars.yml`` but no key item: only `st-cli upgrade`
+    writes it. After the release, a core with its key but no yhub unit needs
+    the yhub bootstrap.
+    """
+    core_ok = _has_key_item(meta, app, env, *_DOCS_KEYS[0])
+    yhub_ok = _has_key_item(meta, app, env, *_DOCS_KEYS[1])
+    if core_ok and yhub_ok:
+        return True, ""
+    if core_ok:
+        return False, f"`st-cli bootstrap {app} {env} -c yhub`"
+    if paths.vars_path(app, env, meta.core().key).exists():
+        return False, "`st-cli upgrade`"
+    return False, f"`st-cli bootstrap {app} {env}`"
+
+
+def _generate_docs(meta, app: str, env: str) -> None:
+    """Mint the two RSA keys of docs and print where each one goes."""
+    ui.info(f"Minting the two RSA keys for {app}/{env}. This takes a few seconds.")
+    pems = [keypairs.generate_rsa_private_key_pem() for _ in _DOCS_KEYS]
+    hashi = _backend_kind(app, env) == BACKEND_HASHI_VAULT
+    wired, replay = _docs_state(meta, app, env)
+
+    if hashi:
+        steps = "\n".join(
+            f"- store the key {key} in OpenBao (unit {unit}); "
+            f"the default lookup term is `@openbao(kv/data/{app}:{key})`"
+            for key, unit in _DOCS_KEYS
+        )
+        if wired:
+            steps += (
+                "\nThe units already hold these lookup terms. "
+                "Replace the value in OpenBao at the path of each term, "
+                f"then run `st-cli deploy {app} {env}`."
+            )
+        else:
+            steps += (
+                f"\nThen run {replay}. It asks for one lookup term per key. "
+                "Give the term of the key you stored. Do not deploy before."
+            )
+    elif wired:
+        commands = "\n".join(
+            f"- `st-cli secrets {app} {env} -c {unit}`" for _, unit in _DOCS_KEYS
+        )
+        steps = (
+            "Paste each YAML block below over the same variable in the vault "
+            f"of its unit:\n{commands}\n"
+            f"Then run `st-cli deploy {app} {env}`."
+        )
+    else:
+        steps = (
+            f"{replay} generates the missing key itself on this backend. "
+            "Use the blocks below only to replace a key after that."
+        )
+
+    ui.note(
+        f"[bold]docs[/bold]: JWT_PRIVATE_KEY signs the tokens of the backend. "
+        f"[bold]yhub[/bold]: YHUB_JWT_PRIVATE_KEY signs the tokens of the "
+        f"collaboration server.\n{steps}\n"
+        "Rotation: each side reads the JWKS of the other side, so you can "
+        "replace one key alone. You must restart the unit after the change.\n"
+        "This command is purely [bold]local[/bold]: it only generates and prints. "
+        "It writes nothing, and st-cli keeps [bold]no copy[/bold] of the keys "
+        "(shown only once, below).",
+        title="RSA keys",
+    )
+    for (key, unit), pem in zip(_DOCS_KEYS, pems, strict=True):
+        ui.info(f"{key} (unit {unit}):")
+        if hashi:
+            ui.value(pem.rstrip("\n"))
+        else:
+            ui.value(_vault_block("vault_" + key.lower(), pem))
+
+
+def _vault_block(name: str, pem: str) -> str:
+    lines = "\n".join("  " + line for line in pem.splitlines())
+    return f"{name}: |\n{lines}"
+
+
 def generate(app: str, env: str, signing_key: bool = False) -> None:
     """Run the keypair questionnaire for ``(app, env)`` and print the summary.
 
     With ``signing_key``, mint the webhook signing seed instead (no
-    questionnaire — that key has no issuer).
+    questionnaire — that key has no issuer). For ``docs``, mint the two RSA keys.
     """
     meta = appmeta.load_app(app)  # unknown app → clean StCliError with the list
+    if app == "docs":
+        if signing_key:
+            raise StCliError("--signing-key works only with file-scanner.")
+        _generate_docs(meta, app, env)
+        return
     if app != "file-scanner":
         raise StCliError(
-            "generate-keypairs currently supports only file-scanner — the app "
-            "that authenticates its callers by Ed25519 keypair."
+            "generate-keypairs supports only file-scanner (Ed25519 keypairs) "
+            "and docs (RSA keys)."
         )
 
     if signing_key:

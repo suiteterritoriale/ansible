@@ -18,6 +18,8 @@
         dest: "frontend_env"
       - src: "{{ st_docs_caddy_env_template }}"
         dest: "caddy_env"
+      - src: "{{ st_docs_yprovider_env_template }}"
+        dest: "yprovider_env"
       - src: "docs/Caddyfile.j2"
         dest: "Caddyfile"
       - src: "{{ st_docs_theme_customization_src }}"

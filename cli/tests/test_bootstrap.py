@@ -6,14 +6,18 @@ from __future__ import annotations
 
 import pytest
 from helpers import (
+    ACCEPT_DEFAULT,
+    accept_defaults,
     docs_first_run_script,
+    docs_hashi_script,
+    docs_yhub_script,
     livekit_script,
     meet_first_run_script,
     messages_first_run_script,
     projects_first_run_script,
     script_questionary,
     seed_creds,
-    seed_docs_yprovider_unit,
+    seed_docs_yhub_unit,
     seed_livekit_provider,
     with_answers,
 )
@@ -1450,199 +1454,187 @@ def test_ask_core_conversations_forces_db_vars_and_prompts_llm(monkeypatch):
     assert "st_conversations_caddy_env" not in rendered
 
 
-def test_bootstrap_docs_full_deploys_yprovider(repo, monkeypatch):
-    """Full `bootstrap docs prod` deploying yprovider on a single host generates
-    and mirrors the shared secrets without re-prompting for them."""
+def test_bootstrap_docs_full_deploys_yhub(repo, monkeypatch):
+    """Full `bootstrap docs prod` deploying yhub on another host writes the v6
+    core keys, the converter env, the yhub unit and both RSA secret files."""
     seed_creds(repo)
     sq = script_questionary(
         monkeypatch,
-        docs_first_run_script(smtp=True, yprovider="Yes — bootstrap now")
-        + [
-            ("text", "yprovider host(s)", "10.0.0.9"),
-            # no "Public domain for docs" prompt: _ensure_domain sees DOMAIN set.
-            # no secret prompts: they mirror straight from the core's buffer.
-            ("confirm", "cadvisor", True),  # yprovider cadvisor
-        ],
+        docs_first_run_script(smtp=True, yhub="Yes — bootstrap now")
+        + docs_yhub_script(),
     )
 
     bootstrap.bootstrap("docs", "prod")
 
-    # caddy expands {$CADDY_YPROVIDER_ENDPOINTS} at parse time, so the endpoint
-    # list lands in the caddy env blob, not as an ansible var.
     core_data = tree.load_vars("docs", "prod", "docs")
     assert core_data["st_docs_public_host"] == "docs.example.org"
-    assert "st_docs_yprovider_endpoints" not in core_data
-    assert (
-        "CADDY_YPROVIDER_ENDPOINTS=10.0.0.9:50601" in (core_data["st_docs_caddy_env"])
-    )
+    # caddy expands {$CADDY_YHUB_ENDPOINTS} at parse time, so the endpoint list
+    # lands in the caddy env blob, not as an ansible var.
+    assert "CADDY_YHUB_ENDPOINTS=10.0.0.9:50601" in core_data["st_docs_caddy_env"]
+    assert "CADDY_YPROVIDER_ENDPOINTS" not in core_data["st_docs_caddy_env"]
 
     core_vars = (repo / "docs/prod/docs/vars.yml").read_text()
     # the upstream docs Django package is named "impress", not "docs".
     assert "DJANGO_SETTINGS_MODULE=impress.settings" in core_vars
-    assert "DJANGO_SETTINGS_MODULE=docs.settings" not in core_vars
     assert "DJANGO_ALLOWED_HOSTS={{ st_docs_public_host }}" in core_vars
     assert (
         'OIDC_REDIRECT_ALLOWED_HOSTS=["https://{{ st_docs_public_host }}"]' in core_vars
     )
     assert (
-        "COLLABORATION_WS_URL=wss://{{ st_docs_public_host }}/collaboration/ws/"
-        in core_vars
+        "COLLABORATION_WS_URL=wss://{{ st_docs_public_host }}"
+        "/collaboration/ws/v1/docs\n" in core_vars
     )
-    assert (
-        "COLLABORATION_API_URL=https://{{ st_docs_public_host }}/collaboration/api/"
-        in core_vars
-    )
-    assert (
-        "COLLABORATION_SERVER_SECRET={{ vault_collaboration_server_secret }}"
-        in core_vars
-    )
+    assert "COLLABORATION_API_URL" not in core_vars
+    assert "COLLABORATION_SERVER_SECRET" not in core_vars
+    assert "YHUB_API_BASE_URL=http://10.0.0.9:50601\n" in core_vars
+    assert "Y_PROVIDER_API_BASE_URL=http://y-provider:4444/api/\n" in core_vars
     assert "Y_PROVIDER_API_KEY={{ vault_y_provider_api_key }}" in core_vars
-    assert "Y_PROVIDER_API_BASE_URL=http://10.0.0.9:50601/api/" in core_vars
-    assert "# Backend-only (the browser never calls it)" in core_vars
+    assert "JWT_PRIVATE_KEY" not in core_data["st_docs_backend_env"]
     assert "CONVERSION_UPLOAD_ENABLED=true" in core_vars
     assert "DOCSPEC_API_URL=http://docspec:4000/conversion" in core_vars
-    assert (
-        "DJANGO_EMAIL_LOGO_IMG=https://{{ st_docs_public_host }}"
-        "/assets/logo-suite-numerique.png" in core_vars
+
+    # the converter env, third layer of the core unit
+    assert core_data["st_docs_yprovider_env"] == (
+        "COLLABORATION_BACKEND_BASE_URL=https://{{ st_docs_public_host }}\n"
+        "COLLABORATION_SERVER_ORIGIN=https://{{ st_docs_public_host }}\n"
+        "COLLABORATION_LOGGING=true\n"
     )
-    assert "DJANGO_EMAIL_URL_APP=https://{{ st_docs_public_host }}" in core_vars
+    assert [dict(i) for i in core_data["st_docs_backend_secret_files"]] == [
+        {"env": "JWT_PRIVATE_KEY", "content": "{{ vault_jwt_private_key }}"}
+    ]
 
     core_vault = vault.decrypt_to_dict(paths.vault_path("docs", "prod", "docs"))
-    assert "vault_collaboration_server_secret" in core_vault
+    assert "vault_collaboration_server_secret" not in core_vault
+    assert core_vault["vault_jwt_private_key"].startswith("-----BEGIN PRIVATE KEY-----")
     assert "vault_y_provider_api_key" in core_vault
 
-    yp_env = tree.load_vars("docs", "prod", "yprovider")["st_docs_yprovider_env"]
-    assert "COLLABORATION_SERVER_SECRET={{ vault_collaboration_server_secret }}" in (
-        yp_env
+    yh_data = tree.load_vars("docs", "prod", "yhub")
+    assert yh_data["st_docs_public_host"] == "docs.example.org"
+    assert yh_data["st_docs_yhub_run_init_db"] == (
+        "{{ true if inventory_hostname == ansible_play_hosts_all[0] else false }}"
     )
-    assert "COLLABORATION_SERVER_ORIGIN=https://docs.example.org" in yp_env
-    assert "COLLABORATION_BACKEND_BASE_URL=https://docs.example.org" in yp_env
-    assert "Y_PROVIDER_API_KEY={{ vault_y_provider_api_key }}" in yp_env
-    assert "COLLABORATION_LOGGING=true" in yp_env
+    yh_env = yh_data["st_docs_yhub_env"]
+    assert "REDIS={{ vault_redis }}\n" in yh_env
+    assert "POSTGRES={{ vault_postgres }}\n" in yh_env
+    assert "COLLABORATION_BACKEND_BASE_URL=https://{{ st_docs_public_host }}" in yh_env
+    assert "COLLABORATION_SERVER_ORIGIN=https://{{ st_docs_public_host }}" in yh_env
+    assert "Y_PROVIDER_API_KEY={{ vault_y_provider_api_key }}" in yh_env
+    assert "SOFT_MIGRATION=false\n" in yh_env
+    assert "LEGACY_S3" not in yh_env
+    assert "YHUB_JWT_PRIVATE_KEY" not in yh_env
+    assert [dict(i) for i in yh_data["st_docs_yhub_secret_files"]] == [
+        {"env": "YHUB_JWT_PRIVATE_KEY", "content": "{{ vault_yhub_jwt_private_key }}"}
+    ]
 
-    # the secrets mirrored into yprovider's own vault equal the core's values.
-    yp_vault = vault.decrypt_to_dict(paths.vault_path("docs", "prod", "yprovider"))
+    yh_vault = vault.decrypt_to_dict(paths.vault_path("docs", "prod", "yhub"))
     assert (
-        yp_vault["vault_collaboration_server_secret"]
-        == core_vault["vault_collaboration_server_secret"]
+        yh_vault["vault_y_provider_api_key"] == core_vault["vault_y_provider_api_key"]
     )
-    assert (
-        yp_vault["vault_y_provider_api_key"] == core_vault["vault_y_provider_api_key"]
+    assert yh_vault["vault_redis"] == "redis://yhub-redis.example.org:6379"
+    assert yh_vault["vault_postgres"].endswith("/yhub")
+    assert yh_vault["vault_yhub_jwt_private_key"].startswith(
+        "-----BEGIN PRIVATE KEY-----"
     )
+    # the backend and yhub sign with two different keys
+    assert yh_vault["vault_yhub_jwt_private_key"] != core_vault["vault_jwt_private_key"]
 
-    assert "10.0.0.9" in (repo / "docs/prod/yprovider/hosts").read_text()
+    assert "10.0.0.9" in (repo / "docs/prod/yhub/hosts").read_text()
+    assert not paths.vars_path("docs", "prod", "yprovider").exists()
     assert not sq._scripts, f"unconsumed scripts: {sq._scripts}"
 
     m = manifest.load_manifest()
     by_comp = {u.component: u for u in m.units}
     assert by_comp["docs"].mode == "managed"
-    assert by_comp["yprovider"].mode == "managed"
+    assert by_comp["yhub"].mode == "managed"
 
 
-def test_bootstrap_docs_yprovider_standalone_prompts_secrets(repo, monkeypatch):
-    """`bootstrap docs prod -c yprovider` with no existing docs core prompts
-    DOMAIN and both core-owned secrets."""
+def test_bootstrap_docs_yhub_standalone_prompts_secret(repo, monkeypatch):
+    """`bootstrap docs prod -c yhub` with no docs core prompts DOMAIN and the
+    shared Y_PROVIDER_API_KEY, and wires the real host endpoint."""
     seed_creds(repo)
     sq = script_questionary(
         monkeypatch,
         [
             ("select", "Secret backend:", "ansible-vault"),
-            ("text", "yprovider host(s)", "10.0.0.9"),
             (
                 "text",
                 "Public domain for docs (for the collaboration server origin)",
                 "docs.example.org",
             ),
-            (
-                "password",
-                "COLLABORATION_SERVER_SECRET (shared with the docs core — must match it)",
-                "shared-collab-secret",
-            ),
+        ]
+        + [
             (
                 "password",
                 "Y_PROVIDER_API_KEY (shared with the docs core — must match it)",
                 "shared-yprovider-key",
             ),
-            ("confirm", "cadvisor", True),  # yprovider cadvisor
-        ],
+        ]
+        + docs_yhub_script(),
     )
 
-    bootstrap.bootstrap("docs", "prod", component="yprovider")
+    bootstrap.bootstrap("docs", "prod", component="yhub")
 
-    yp_env = tree.load_vars("docs", "prod", "yprovider")["st_docs_yprovider_env"]
-    assert "COLLABORATION_SERVER_SECRET={{ vault_collaboration_server_secret }}" in (
-        yp_env
+    yh_env = tree.load_vars("docs", "prod", "yhub")["st_docs_yhub_env"]
+    assert "Y_PROVIDER_API_KEY={{ vault_y_provider_api_key }}" in yh_env
+    assert "COLLABORATION_SERVER_ORIGIN=https://{{ st_docs_public_host }}" in yh_env
+    assert (
+        tree.load_vars("docs", "prod", "yhub")["st_docs_public_host"]
+        == "docs.example.org"
     )
-    assert "COLLABORATION_SERVER_ORIGIN=https://docs.example.org" in yp_env
-
-    yp_vault = vault.decrypt_to_dict(paths.vault_path("docs", "prod", "yprovider"))
-    assert yp_vault["vault_collaboration_server_secret"] == "shared-collab-secret"
-    assert yp_vault["vault_y_provider_api_key"] == "shared-yprovider-key"
+    yh_vault = vault.decrypt_to_dict(paths.vault_path("docs", "prod", "yhub"))
+    assert yh_vault["vault_y_provider_api_key"] == "shared-yprovider-key"
 
     assert not sq._scripts, f"unconsumed scripts: {sq._scripts}"
     assert not paths.vars_path("docs", "prod", "docs").exists()
     m = manifest.load_manifest()
-    assert [u.component for u in m.units] == ["yprovider"]
+    assert [u.component for u in m.units] == ["yhub"]
 
 
-def test_bootstrap_docs_reuse_yprovider_adopts_kept_secrets(repo, monkeypatch):
-    """Reusing an existing yprovider unit makes the docs core adopt its kept
-    COLLABORATION_SERVER_SECRET and Y_PROVIDER_API_KEY instead of generating fresh ones.
-    """
-    seed_docs_yprovider_unit(repo)
-    yp_vault_before = (repo / "docs/prod/yprovider/vault.yml").read_bytes()
+def test_bootstrap_docs_reuse_yhub_adopts_kept_secret(repo, monkeypatch):
+    """Reusing an existing yhub unit makes the docs core adopt its kept
+    Y_PROVIDER_API_KEY and rebuild the caddy upstreams from its hosts file."""
+    seed_docs_yhub_unit(repo)
+    yh_vault_before = (repo / "docs/prod/yhub/vault.yml").read_bytes()
+    yh_vars_before = (repo / "docs/prod/yhub/vars.yml").read_bytes()
     sq = script_questionary(
         monkeypatch,
-        docs_first_run_script(
-            secret_backend=False, yprovider="Reuse existing in the repo"
-        ),
+        docs_first_run_script(secret_backend=False, yhub="Reuse existing in the repo"),
     )
 
     bootstrap.bootstrap("docs", "prod")
 
     core_vault = vault.decrypt_to_dict(paths.vault_path("docs", "prod", "docs"))
-    assert core_vault["vault_collaboration_server_secret"] == "kept-collab-secret"
-    assert core_vault["vault_y_provider_api_key"] == "kept-yprovider-key"
+    assert core_vault["vault_y_provider_api_key"] == "kept-yhub-api-key"
 
-    # the computed core values rebuild from the kept unit's hosts file.
-    core_data = tree.load_vars("docs", "prod", "docs")
-    assert (
-        "CADDY_YPROVIDER_ENDPOINTS=10.0.0.9:50601" in (core_data["st_docs_caddy_env"])
-    )
     core_vars = (repo / "docs/prod/docs/vars.yml").read_text()
-    assert "Y_PROVIDER_API_BASE_URL=http://10.0.0.9:50601/api/" in core_vars
-    assert "# Backend-only (the browser never calls it)" in core_vars
+    assert "CADDY_YHUB_ENDPOINTS=10.0.0.9:50601" in core_vars
+    assert "YHUB_API_BASE_URL=http://10.0.0.9:50601\n" in core_vars
 
-    # the kept yprovider unit is untouched
-    assert (repo / "docs/prod/yprovider/vault.yml").read_bytes() == yp_vault_before
+    # the kept yhub unit is untouched
+    assert (repo / "docs/prod/yhub/vault.yml").read_bytes() == yh_vault_before
+    assert (repo / "docs/prod/yhub/vars.yml").read_bytes() == yh_vars_before
 
     assert not sq._scripts, f"unconsumed scripts: {sq._scripts}"
-    m = manifest.load_manifest()
-    by_comp = {u.component: u.mode for u in m.units}
-    assert by_comp["yprovider"] == "managed"
+    by_comp = {u.component: u.mode for u in manifest.load_manifest().units}
+    assert by_comp["yhub"] == "managed"
     assert by_comp["docs"] == "managed"
 
 
-def test_bootstrap_docs_yprovider_external_prompts_endpoints(repo, monkeypatch):
-    """An external yprovider prompts for its endpoints, base URL, and secrets,
-    which overwrite the values `_ask_core` generated."""
+def test_bootstrap_docs_yhub_external_prompts_endpoints(repo, monkeypatch):
+    """An external yhub prompts for its endpoints, API URL and shared key, which
+    overwrite the value `_ask_core` generated."""
     seed_creds(repo)
     sq = script_questionary(
         monkeypatch,
-        docs_first_run_script(yprovider="Already deployed (enter URL + keys)")
+        docs_first_run_script(yhub="Already deployed (enter URL + keys)")
         + [
             (
                 "text",
-                "yprovider endpoints (host:port, comma-separated)",
+                "yhub endpoints (host:port, comma-separated)",
                 "10.0.0.9:50601, 10.0.0.10:50601",
             ),
-            (
-                "text",
-                "Y_PROVIDER_API_BASE_URL (backend-only conversion API)",
-                "http://yprovider.internal:50601/api/",
-            ),
-            ("password", "COLLABORATION_SERVER_SECRET", "ext-collab-secret"),
-            ("password", "Y_PROVIDER_API_KEY", "ext-yprovider-key"),
+            ("text", "YHUB_API_BASE_URL", "http://yhub.internal:50601"),
+            ("password", "Y_PROVIDER_API_KEY", "ext-yhub-key"),
         ],
     )
 
@@ -1650,94 +1642,422 @@ def test_bootstrap_docs_yprovider_external_prompts_endpoints(repo, monkeypatch):
 
     core_data = tree.load_vars("docs", "prod", "docs")
     assert (
-        "CADDY_YPROVIDER_ENDPOINTS=10.0.0.9:50601 10.0.0.10:50601"
+        "CADDY_YHUB_ENDPOINTS=10.0.0.9:50601 10.0.0.10:50601"
         in core_data["st_docs_caddy_env"]
     )
-
     core_vars = (repo / "docs/prod/docs/vars.yml").read_text()
-    assert "Y_PROVIDER_API_BASE_URL=http://yprovider.internal:50601/api/" in core_vars
+    assert "YHUB_API_BASE_URL=http://yhub.internal:50601\n" in core_vars
 
     core_vault = vault.decrypt_to_dict(paths.vault_path("docs", "prod", "docs"))
-    assert core_vault["vault_collaboration_server_secret"] == "ext-collab-secret"
-    assert core_vault["vault_y_provider_api_key"] == "ext-yprovider-key"
+    assert core_vault["vault_y_provider_api_key"] == "ext-yhub-key"
 
-    assert not paths.vars_path("docs", "prod", "yprovider").exists()
-
-    m = manifest.load_manifest()
-    by_comp = {u.component: u.mode for u in m.units}
-    assert by_comp["yprovider"] == "external"
+    assert not paths.vars_path("docs", "prod", "yhub").exists()
+    by_comp = {u.component: u.mode for u in manifest.load_manifest().units}
+    assert by_comp["yhub"] == "external"
     assert by_comp["docs"] == "managed"
-
     assert not sq._scripts, f"unconsumed scripts: {sq._scripts}"
 
 
-def test_bootstrap_docs_yprovider_skip_leaves_endpoints_empty(repo, monkeypatch):
-    """Skipping yprovider sets no endpoint or secret, and the core caddy env
-    renders CADDY_YPROVIDER_ENDPOINTS as empty."""
+def test_bootstrap_docs_yhub_skip_leaves_endpoints_empty(repo, monkeypatch):
+    """Skipping yhub sets no endpoint, and the core renders no YHUB_API_BASE_URL."""
     seed_creds(repo)
     sq = script_questionary(monkeypatch, docs_first_run_script())
 
     bootstrap.bootstrap("docs", "prod")
 
     core_data = tree.load_vars("docs", "prod", "docs")
-    assert "CADDY_YPROVIDER_ENDPOINTS=\n" in core_data["st_docs_caddy_env"]
+    assert "CADDY_YHUB_ENDPOINTS=\n" in core_data["st_docs_caddy_env"]
+    assert "YHUB_API_BASE_URL" not in core_data["st_docs_backend_env"]
+    # the converter and the RSA key of the backend do not depend on yhub
+    assert (
+        "Y_PROVIDER_API_BASE_URL=http://y-provider:4444/api/"
+        in (core_data["st_docs_backend_env"])
+    )
+    assert len(core_data["st_docs_backend_secret_files"]) == 1
 
-    m = manifest.load_manifest()
-    by_comp = {u.component: u.mode for u in m.units}
-    assert "yprovider" not in by_comp
+    by_comp = {u.component: u.mode for u in manifest.load_manifest().units}
+    assert "yhub" not in by_comp
     assert by_comp["docs"] == "managed"
-
-    assert not paths.vars_path("docs", "prod", "yprovider").exists()
+    assert not paths.vars_path("docs", "prod", "yhub").exists()
     assert not sq._scripts, f"unconsumed scripts: {sq._scripts}"
 
 
-def test_docs_yprovider_endpoints_colocated_single_host():
-    """core and yprovider on the same single host use the podman host alias
-    host.containers.internal."""
-    answers = {"_core_hosts": ["10.0.0.5"]}
+def test_bootstrap_docs_yprovider_is_not_a_valid_target(repo):
+    """`-c yprovider` is refused: bootstrap only offers yhub now."""
+    seed_creds(repo)
+    with pytest.raises(StCliError) as exc:
+        bootstrap.bootstrap("docs", "prod", component="yprovider")
+    assert "unknown component 'yprovider'" in str(exc.value)
+
+
+ALIAS = "host.containers.internal:50601"
+
+
+@pytest.mark.parametrize(
+    "core,yhub,expected",
+    [
+        # the alias comes first when a yhub host is a core host
+        (["10.0.0.5"], ["10.0.0.5"], ALIAS),
+        (
+            ["10.0.0.5", "10.0.0.6"],
+            ["10.0.0.5", "10.0.0.6"],
+            f"{ALIAS} 10.0.0.5:50601 10.0.0.6:50601",
+        ),
+        (["10.0.0.5"], ["10.0.0.5", "10.0.0.9"], f"{ALIAS} 10.0.0.9:50601"),
+        (["10.0.0.5", "10.0.0.6"], ["10.0.0.5"], f"{ALIAS} 10.0.0.5:50601"),
+        (
+            ["10.0.0.5", "10.0.0.6"],
+            ["10.0.0.5", "10.0.0.6", "10.0.0.9"],
+            f"{ALIAS} 10.0.0.5:50601 10.0.0.6:50601 10.0.0.9:50601",
+        ),
+        # real entries keep the order of the yhub hosts
+        (["10.0.0.5"], ["10.0.0.9", "10.0.0.5"], f"{ALIAS} 10.0.0.9:50601"),
+        (
+            ["10.0.0.5", "10.0.0.6"],
+            ["10.0.0.6", "10.0.0.5"],
+            f"{ALIAS} 10.0.0.6:50601 10.0.0.5:50601",
+        ),
+        # no yhub host is a core host: real addresses only
+        (["10.0.0.5"], ["10.0.0.9", "10.0.0.10"], "10.0.0.9:50601 10.0.0.10:50601"),
+        (["10.0.0.5", "10.0.0.6"], ["10.0.0.9"], "10.0.0.9:50601"),
+        # an IPv6 literal needs brackets in a host:port
+        (["fd00::5"], ["fd00::9"], "[fd00::9]:50601"),
+    ],
+)
+def test_docs_yhub_endpoints_rules(core, yhub, expected, capfd):
+    answers = {"_core_hosts": core, "_worker_hosts": []}
+    assert bootstrap._docs_yhub_endpoints(answers, "docs", "prod", "docs", yhub) == (
+        expected
+    )
+    assert capfd.readouterr().err == ""
+
+
+@pytest.mark.parametrize(
+    "core,workers,yhub,expected",
+    [
+        (["10.0.0.5"], [], ["10.0.0.5"], ["http://host.containers.internal:50601"]),
+        (
+            ["10.0.0.5", "10.0.0.6"],
+            ["10.0.0.5"],
+            ["10.0.0.5", "10.0.0.6"],
+            ["http://host.containers.internal:50601"],
+        ),
+        # layout A: yhub on the core host, the workers elsewhere: no safe URL
+        (["10.0.0.5"], ["10.0.0.7"], ["10.0.0.5"], []),
+        # layout B: the hosts that are neither core nor workers
+        (["10.0.0.5"], [], ["10.0.0.5", "10.0.0.9"], ["http://10.0.0.9:50601"]),
+        (["10.0.0.5"], [], ["10.0.0.9"], ["http://10.0.0.9:50601"]),
+        (
+            ["10.0.0.5"],
+            ["10.0.0.7"],
+            ["10.0.0.7", "10.0.0.9", "10.0.0.10"],
+            ["http://10.0.0.9:50601", "http://10.0.0.10:50601"],
+        ),
+        # workers on the yhub host cannot use it either
+        (["10.0.0.5"], ["10.0.0.9"], ["10.0.0.9"], []),
+        (["10.0.0.5", "10.0.0.6"], [], ["10.0.0.5"], []),
+        (["10.0.0.5"], [], ["fd00::9"], ["http://[fd00::9]:50601"]),
+    ],
+)
+def test_valid_yhub_urls_rules(core, workers, yhub, expected):
+    assert bootstrap._valid_yhub_urls(core, workers, yhub) == expected
+
+
+def test_docs_yhub_endpoints_reads_hosts_from_disk(repo):
+    """standalone and reuse runs carry no stash, so the hosts file of the core
+    decides, workers group included."""
+    tree.write_groups(
+        "docs", "prod", "docs", {"docs": ["10.0.0.5"], "workers": ["10.0.0.7"]}
+    )
     assert (
-        bootstrap._docs_yprovider_endpoints(
-            answers, "docs", "prod", "docs", ["10.0.0.5"]
-        )
-        == "host.containers.internal:50601"
+        bootstrap._docs_yhub_endpoints({}, "docs", "prod", "docs", ["10.0.0.9"])
+        == "10.0.0.9:50601"
+    )
+    assert (
+        bootstrap._docs_yhub_endpoints({}, "docs", "prod", "docs", ["10.0.0.5"])
+        == ALIAS
     )
 
 
-def test_docs_yprovider_endpoints_distinct_hosts():
-    answers = {"_core_hosts": ["10.0.0.5"]}
-    assert (
-        bootstrap._docs_yprovider_endpoints(
-            answers, "docs", "prod", "docs", ["10.0.0.9", "10.0.0.10"]
-        )
-        == "10.0.0.9:50601 10.0.0.10:50601"
-    )
-
-
-def test_docs_yprovider_endpoints_multi_colocated_keeps_real_hosts():
-    """several co-located hosts keep the real IPs, so every caddy shares one
-    identical list and routes a room to the same node."""
-    answers = {"_core_hosts": ["10.0.0.5", "10.0.0.6"]}
-    assert (
-        bootstrap._docs_yprovider_endpoints(
-            answers, "docs", "prod", "docs", ["10.0.0.5", "10.0.0.6"]
-        )
-        == "10.0.0.5:50601 10.0.0.6:50601"
-    )
-
-
-def test_docs_yprovider_endpoints_reads_core_hosts_from_disk(repo):
-    """standalone and reuse runs carry no stash, so the core hosts file on disk
-    decides."""
-    tree.write_hosts("docs", "prod", "docs", "docs", ["10.0.0.5"])
-    assert (
-        bootstrap._docs_yprovider_endpoints({}, "docs", "prod", "docs", ["10.0.0.5"])
-        == "host.containers.internal:50601"
-    )
-
-
-def test_docs_yprovider_endpoints_rejects_empty_hosts(repo):
+def test_docs_yhub_endpoints_rejects_empty_hosts(repo):
     with pytest.raises(StCliError):
-        bootstrap._docs_yprovider_endpoints({}, "docs", "prod", "docs", [])
+        bootstrap._docs_yhub_endpoints({}, "docs", "prod", "docs", [])
+
+
+def test_bootstrap_docs_yhub_soft_migration_on_writes_the_legacy_block(
+    repo, monkeypatch
+):
+    """The gate on writes SOFT_MIGRATION=true and the LEGACY_S3_* block, with the
+    secret in the yhub vault."""
+    seed_creds(repo)
+    sq = script_questionary(
+        monkeypatch,
+        docs_first_run_script(yhub="Yes — bootstrap now")
+        + docs_yhub_script(migrate=True),
+    )
+
+    bootstrap.bootstrap("docs", "prod")
+
+    yh_env = tree.load_vars("docs", "prod", "yhub")["st_docs_yhub_env"]
+    assert "SOFT_MIGRATION=true\n" in yh_env
+    assert "LEGACY_S3_ENDPOINT_URL=https://s3.example.org\n" in yh_env
+    assert "LEGACY_S3_BUCKET_NAME=docs-media\n" in yh_env
+    assert "LEGACY_S3_ACCESS_KEY_ID=ro-key\n" in yh_env
+    assert "LEGACY_S3_SECRET_ACCESS_KEY={{ vault_legacy_s3_secret_access_key }}" in (
+        yh_env
+    )
+    assert "LEGACY_S3_REGION_NAME" not in yh_env  # blank answer, no line
+    yh_vault = vault.decrypt_to_dict(paths.vault_path("docs", "prod", "yhub"))
+    assert yh_vault["vault_legacy_s3_secret_access_key"] == "ro-secret"
+    assert not sq._scripts, f"unconsumed scripts: {sq._scripts}"
+
+
+def test_bootstrap_docs_yhub_soft_migration_off_asks_no_legacy_prompt(
+    repo, monkeypatch
+):
+    seed_creds(repo)
+    sq = script_questionary(
+        monkeypatch,
+        docs_first_run_script(yhub="Yes — bootstrap now") + docs_yhub_script(),
+    )
+
+    bootstrap.bootstrap("docs", "prod")
+
+    yh_env = tree.load_vars("docs", "prod", "yhub")["st_docs_yhub_env"]
+    assert "SOFT_MIGRATION=false\n" in yh_env
+    assert "LEGACY_S3" not in yh_env
+    assert not sq.asked("text", "LEGACY_S3")
+    assert not sq._scripts, f"unconsumed scripts: {sq._scripts}"
+
+
+def test_bootstrap_docs_yhub_soft_migration_gate_defaults_to_no_on_a_new_install(
+    repo, monkeypatch
+):
+    seed_creds(repo)
+    script = docs_first_run_script(yhub="Yes — bootstrap now") + docs_yhub_script()
+    script = with_answers(script, {"Migrate the documents": ACCEPT_DEFAULT})
+    script_questionary(monkeypatch, script)
+
+    bootstrap.bootstrap("docs", "prod")
+
+    yh_env = tree.load_vars("docs", "prod", "yhub")["st_docs_yhub_env"]
+    assert "SOFT_MIGRATION=false\n" in yh_env
+
+
+def test_bootstrap_docs_yhub_soft_migration_switch_to_no_warns_and_keeps_lines(
+    repo, monkeypatch, capfd
+):
+    """Yes to no flips SOFT_MIGRATION, but the merge keeps the LEGACY_S3_* lines
+    and the vault entry, so the warning names them."""
+    seed_creds(repo)
+    script_questionary(
+        monkeypatch,
+        docs_first_run_script(yhub="Yes — bootstrap now")
+        + docs_yhub_script(migrate=True),
+    )
+    bootstrap.bootstrap("docs", "prod")
+    capfd.readouterr()
+
+    sq = accept_defaults(
+        monkeypatch,
+        [
+            ("select", "Database configuration:", "DATABASE_URL"),
+            ("select", "Bootstrap yhub now?", "Modify (replay the questionnaire)"),
+            ("confirm", "Migrate the documents", False),
+        ],
+    )
+    bootstrap.bootstrap("docs", "prod", replay=bootstrap.ReplayAction.MODIFY)
+
+    err = capfd.readouterr().err
+    assert "LEGACY_S3_ENDPOINT_URL" in err
+    assert "vault_legacy_s3_secret_access_key" in err
+    yh_env = tree.load_vars("docs", "prod", "yhub")["st_docs_yhub_env"]
+    assert "SOFT_MIGRATION=false\n" in yh_env
+    assert "SOFT_MIGRATION=true" not in yh_env
+    assert "LEGACY_S3_BUCKET_NAME=docs-media\n" in yh_env
+    yh_vault = vault.decrypt_to_dict(paths.vault_path("docs", "prod", "yhub"))
+    assert yh_vault["vault_legacy_s3_secret_access_key"] == "ro-secret"
+    assert not sq.asked("text", "LEGACY_S3")
+
+
+def test_bootstrap_docs_yhub_legacy_defaults_come_from_the_core_s3_answers(
+    repo, monkeypatch
+):
+    """The LEGACY_S3_* prompts suggest the core AWS_S3_* values: scheme and host
+    only for the endpoint. The access key has no default."""
+    seed_creds(repo)
+    core = with_answers(
+        docs_first_run_script(yhub="Yes — bootstrap now"),
+        {
+            "AWS_S3_ENDPOINT_URL": "https://s3.example.org:9000/some/path",
+            "AWS_S3_REGION_NAME": "fr-par",
+        },
+    )
+    yhub = with_answers(
+        docs_yhub_script(migrate=True),
+        {
+            "LEGACY_S3_ENDPOINT_URL": ACCEPT_DEFAULT,
+            "LEGACY_S3_BUCKET_NAME": ACCEPT_DEFAULT,
+            "LEGACY_S3_REGION_NAME": ACCEPT_DEFAULT,
+        },
+    )
+    sq = script_questionary(monkeypatch, core + yhub)
+
+    bootstrap.bootstrap("docs", "prod")
+
+    yh_env = tree.load_vars("docs", "prod", "yhub")["st_docs_yhub_env"]
+    assert "LEGACY_S3_ENDPOINT_URL=https://s3.example.org:9000\n" in yh_env
+    assert "LEGACY_S3_BUCKET_NAME=docs-media\n" in yh_env
+    assert "LEGACY_S3_REGION_NAME=fr-par\n" in yh_env
+    assert "LEGACY_S3_ACCESS_KEY_ID=ro-key\n" in yh_env
+    assert not sq._scripts, f"unconsumed scripts: {sq._scripts}"
+
+
+def test_bootstrap_docs_yhub_standalone_reads_the_committed_core(repo, monkeypatch):
+    """`-c yhub` over a committed core mirrors its Y_PROVIDER_API_KEY from the
+    core vault, and takes the LEGACY defaults from its S3 answers."""
+    seed_creds(repo)
+    core_script = with_answers(
+        docs_first_run_script(),
+        {"AWS_S3_ENDPOINT_URL": "https://s3.example.org/prefix"},
+    )
+    script_questionary(monkeypatch, core_script)
+    bootstrap.bootstrap("docs", "prod")
+    core_key = vault.decrypt_to_dict(paths.vault_path("docs", "prod", "docs"))[
+        "vault_y_provider_api_key"
+    ]
+
+    script = with_answers(
+        docs_yhub_script(hosts="10.0.0.5", migrate=True),
+        {
+            "LEGACY_S3_ENDPOINT_URL": ACCEPT_DEFAULT,
+            "LEGACY_S3_BUCKET_NAME": ACCEPT_DEFAULT,
+        },
+    )
+    script.append(("text", "Public domain for docs (for", ACCEPT_DEFAULT))
+    sq = script_questionary(monkeypatch, script)
+    bootstrap.bootstrap("docs", "prod", component="yhub")
+
+    assert not sq.asked("password", "Y_PROVIDER_API_KEY")
+    yh_vault = vault.decrypt_to_dict(paths.vault_path("docs", "prod", "yhub"))
+    assert yh_vault["vault_y_provider_api_key"] == core_key
+    yh_env = tree.load_vars("docs", "prod", "yhub")["st_docs_yhub_env"]
+    assert "LEGACY_S3_ENDPOINT_URL=https://s3.example.org\n" in yh_env
+    assert "LEGACY_S3_BUCKET_NAME=docs-media\n" in yh_env
+    assert not sq._scripts, f"unconsumed scripts: {sq._scripts}"
+
+
+def test_bootstrap_docs_yhub_several_hosts_ask_the_api_url(repo, monkeypatch):
+    """With more than one yhub host, YHUB_API_BASE_URL is asked, pre-filled with
+    the first endpoint."""
+    seed_creds(repo)
+    script = docs_first_run_script(yhub="Yes — bootstrap now") + [
+        ("text", "yhub host(s)", "10.0.0.9, 10.0.0.10"),
+        ("text", "POSTGRES (", "postgres://yhub:pw@db:5432/yhub"),
+        ("text", "REDIS (", "redis://r:6379"),
+        ("confirm", "Migrate the documents", False),
+        ("text", "YHUB_API_BASE_URL", ACCEPT_DEFAULT),
+        ("confirm", "cadvisor", True),
+    ]
+    sq = script_questionary(monkeypatch, script)
+
+    bootstrap.bootstrap("docs", "prod")
+
+    core_vars = (repo / "docs/prod/docs/vars.yml").read_text()
+    assert "CADDY_YHUB_ENDPOINTS=10.0.0.9:50601 10.0.0.10:50601" in core_vars
+    assert "YHUB_API_BASE_URL=http://10.0.0.9:50601\n" in core_vars
+    assert not sq._scripts, f"unconsumed scripts: {sq._scripts}"
+
+
+def test_bootstrap_docs_yhub_colocated_uses_the_host_alias(repo, monkeypatch):
+    """yhub on the single core host: the alias, in the caddy upstream and in
+    YHUB_API_BASE_URL."""
+    seed_creds(repo)
+    script_questionary(
+        monkeypatch,
+        docs_first_run_script(yhub="Yes — bootstrap now")
+        + docs_yhub_script(hosts="10.0.0.5"),
+    )
+
+    bootstrap.bootstrap("docs", "prod")
+
+    core_vars = (repo / "docs/prod/docs/vars.yml").read_text()
+    assert "CADDY_YHUB_ENDPOINTS=host.containers.internal:50601\n" in core_vars
+    assert "YHUB_API_BASE_URL=http://host.containers.internal:50601\n" in core_vars
+
+
+def test_bootstrap_docs_yhub_layout_a_asks_the_url_without_default(repo, monkeypatch):
+    """Layout A: yhub on the single core host, workers elsewhere. Caddy uses the
+    alias, and no URL is safe for the workers, so it is asked with no default."""
+    seed_creds(repo)
+    script = (
+        with_answers(
+            docs_first_run_script(yhub="Yes — bootstrap now"),
+            {"workers (leave blank": "10.0.0.7"},
+        )
+        + docs_yhub_script(hosts="10.0.0.5")[:-1]
+        + [
+            ("text", "YHUB_API_BASE_URL", "http://yhub-lb.internal:50601"),
+            ("confirm", "cadvisor", True),
+        ]
+    )
+    sq = script_questionary(monkeypatch, script)
+
+    bootstrap.bootstrap("docs", "prod")
+
+    core_vars = (repo / "docs/prod/docs/vars.yml").read_text()
+    assert "CADDY_YHUB_ENDPOINTS=host.containers.internal:50601\n" in core_vars
+    assert "YHUB_API_BASE_URL=http://yhub-lb.internal:50601\n" in core_vars
+    assert "10.0.0.5:50601" not in core_vars
+    assert not sq._scripts, f"unconsumed scripts: {sq._scripts}"
+
+
+def test_bootstrap_docs_yhub_layout_b_mixes_alias_and_real_host(repo, monkeypatch):
+    """Layout B: yhub on the core host and on 10.0.0.9. Caddy gets the alias and
+    the real host; the URL is the host that no core or workers host shares."""
+    seed_creds(repo)
+    script_questionary(
+        monkeypatch,
+        docs_first_run_script(yhub="Yes — bootstrap now")
+        + docs_yhub_script(hosts="10.0.0.5, 10.0.0.9"),
+    )
+
+    bootstrap.bootstrap("docs", "prod")
+
+    core_vars = (repo / "docs/prod/docs/vars.yml").read_text()
+    assert (
+        "CADDY_YHUB_ENDPOINTS=host.containers.internal:50601 10.0.0.9:50601\n"
+        in core_vars
+    )
+    assert "YHUB_API_BASE_URL=http://10.0.0.9:50601\n" in core_vars
+
+
+def test_bootstrap_docs_hashi_vault_secret_files_hold_lookup_references(
+    repo, monkeypatch
+):
+    """With hashi_vault the secret-files lists carry the lookup reference: no
+    vault.yml, and st-cli mints no key."""
+    script_questionary(monkeypatch, docs_hashi_script())
+
+    bootstrap.bootstrap("docs", "prod")
+
+    ref = "{{ lookup('community.hashi_vault.hashi_vault', 'kv/data/docs:%s') }}"
+    core = tree.load_vars("docs", "prod", "docs")
+    assert [dict(i) for i in core["st_docs_backend_secret_files"]] == [
+        {"env": "JWT_PRIVATE_KEY", "content": ref % "JWT_PRIVATE_KEY"}
+    ]
+    yhub = tree.load_vars("docs", "prod", "yhub")
+    assert [dict(i) for i in yhub["st_docs_yhub_secret_files"]] == [
+        {"env": "YHUB_JWT_PRIVATE_KEY", "content": ref % "YHUB_JWT_PRIVATE_KEY"}
+    ]
+    assert f"POSTGRES={ref % 'POSTGRES'}\n" in yhub["st_docs_yhub_env"]
+    assert f"REDIS={ref % 'REDIS'}\n" in yhub["st_docs_yhub_env"]
+    assert (
+        f"Y_PROVIDER_API_KEY={ref % 'Y_PROVIDER_API_KEY'}\n"
+        in (yhub["st_docs_yhub_env"])
+    )
+    assert not paths.vault_path("docs", "prod", "docs").exists()
+    assert not paths.vault_path("docs", "prod", "yhub").exists()
 
 
 # --------------------------------------------------------------------------- projects
@@ -2097,3 +2417,71 @@ def test_ask_core_transfers_file_scanner_enabled(monkeypatch):
     assert "SCAN_JWT_AUDIENCE=file-scanner" in body
     assert "SCAN_JWT_TTL=300" in body
     assert "SCAN_JWT_PRIVATE_KEY={{ vault_scan_jwt_private_key }}" in body
+
+
+def test_bootstrap_docs_skipping_yhub_warns_that_docs_needs_it(
+    repo, monkeypatch, capfd
+):
+    seed_creds(repo)
+    script_questionary(monkeypatch, docs_first_run_script())
+    bootstrap.bootstrap("docs", "prod")
+    err = " ".join(capfd.readouterr().err.split())
+    assert "yhub is required for docs. `st-cli deploy` refuses until" in err
+    assert 'run `st-cli bootstrap docs prod` and answer "Yes — bootstrap now"' in err
+
+
+def test_bootstrap_docs_skipping_yhub_on_a_v5_tree_warns_that_deploy_refuses(
+    repo, monkeypatch, capfd
+):
+    from helpers import seed_docs_v5_tree
+
+    seed_docs_v5_tree(repo)
+    capfd.readouterr()
+    accept_defaults(
+        monkeypatch,
+        [
+            ("select", "Database configuration:", "DATABASE_URL"),
+            ("select", "Bootstrap yhub now?", "No — bootstrap later"),
+        ],
+    )
+    bootstrap.bootstrap("docs", "prod", replay=bootstrap.ReplayAction.MODIFY)
+    err = " ".join(capfd.readouterr().err.split())
+    assert "yhub is required for docs. `st-cli deploy` refuses until" in err
+
+
+def test_bootstrap_docs_yhub_legacy_endpoint_info_when_the_path_is_stripped(
+    repo, monkeypatch, capfd
+):
+    seed_creds(repo)
+    script_questionary(
+        monkeypatch,
+        with_answers(
+            docs_first_run_script(yhub="Yes — bootstrap now"),
+            {"AWS_S3_ENDPOINT_URL": "https://s3.example.org/prefix"},
+        )
+        + docs_yhub_script(migrate=True),
+    )
+    bootstrap.bootstrap("docs", "prod")
+    out = " ".join(capfd.readouterr().out.split())
+    assert "takes the scheme and the host of AWS_S3_ENDPOINT_URL" in out
+
+
+def test_standalone_yhub_run_says_the_core_does_not_name_yhub_yet(
+    repo, monkeypatch, capfd
+):
+    """The core holds no endpoint at all: the warning does not talk about old
+    hosts, and names the one command that writes the core."""
+    seed_creds(repo)
+    script_questionary(monkeypatch, docs_first_run_script())
+    bootstrap.bootstrap("docs", "prod")
+    capfd.readouterr()
+    script = docs_yhub_script()
+    script.append(("text", "Public domain for docs (for", ACCEPT_DEFAULT))
+    accept_defaults(monkeypatch, script)
+
+    bootstrap.bootstrap("docs", "prod", component="yhub")
+
+    err = " ".join(capfd.readouterr().err.split())
+    assert "The docs unit does not name yhub yet" in err
+    assert "Run `st-cli bootstrap docs prod`" in err
+    assert "old yhub hosts" not in err

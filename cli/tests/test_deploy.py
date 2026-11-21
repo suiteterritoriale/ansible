@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from helpers import call_order_spy, seed_creds, seed_drive_unit, seed_meet_unit
 from typer.testing import CliRunner
 
@@ -18,6 +19,7 @@ from st_cli.core import (
     upgrades,
     upstream,
 )
+from st_cli.core.errors import StCliError
 from st_cli.core.models import StCliManifest, UnitState, UpgradeNeed
 
 
@@ -461,3 +463,285 @@ def test_deploy_rebootstrap_flag_still_blocks_even_with_clean_env_keys(
     assert result.exit_code == 1
     play.assert_not_called()
     env_key_report_spy.assert_not_called()  # the gate raises before it is reached
+
+
+# ------------------------------------------------- required dependency gate (docs/yhub)
+
+
+def _docs_skipping_yhub(repo, monkeypatch):
+    from helpers import docs_first_run_script, script_questionary
+
+    from st_cli.cmd import bootstrap
+
+    seed_creds(repo)
+    script_questionary(monkeypatch, docs_first_run_script())
+    bootstrap.bootstrap("docs", "prod")
+
+
+def _no_side_effects(mocker):
+    gen = mocker.patch.object(generate, "generate_all")
+    galaxy = mocker.patch.object(runner, "galaxy_install")
+    play = mocker.patch.object(runner, "play", return_value=0)
+    ssh = mocker.patch.object(sshuser, "ensure_ssh_user")
+    return gen, galaxy, play, ssh
+
+
+def _deploy(components=None):
+    from st_cli.cmd import deploy as deploy_mod
+
+    deploy_mod.run("docs", "prod", components, dry_run=False, deploy_only=False)
+
+
+@pytest.mark.parametrize("components", [None, ["docs"], ["workers"]])
+def test_deploy_refuses_docs_when_the_user_skipped_yhub(
+    repo, monkeypatch, mocker, components
+):
+    """Docs 6 opens no document without yhub: deploy refuses before any ssh,
+    generate or play."""
+    _docs_skipping_yhub(repo, monkeypatch)
+    calls = _no_side_effects(mocker)
+
+    with pytest.raises(StCliError) as exc:
+        _deploy(components)
+
+    msg = str(exc.value)
+    assert "yhub is required and has no unit" in msg
+    assert "Run `st-cli bootstrap docs prod` and answer" in msg
+    assert '"Yes — bootstrap now" (or "Already deployed (enter URL + keys)")' in msg
+    assert "-c yhub" not in msg
+    assert "st-cli upgrade" not in msg
+    for call in calls:
+        call.assert_not_called()
+
+
+def test_deploy_gate_passes_after_the_yhub_bootstrap_and_a_core_replay(
+    repo, monkeypatch, mocker
+):
+    from helpers import ACCEPT_DEFAULT, accept_defaults, docs_yhub_script
+
+    from st_cli.cmd import bootstrap
+
+    _docs_skipping_yhub(repo, monkeypatch)
+    script = docs_yhub_script()
+    script.append(("text", "Public domain for docs (for", ACCEPT_DEFAULT))
+    accept_defaults(monkeypatch, script)
+    bootstrap.bootstrap("docs", "prod", component="yhub")
+    _, _, play, _ = _no_side_effects(mocker)
+
+    # the yhub unit exists, but the core blobs do not name it yet
+    with pytest.raises(StCliError) as exc:
+        _deploy()
+    assert "does not name yhub yet" in str(exc.value)
+    assert "`st-cli bootstrap docs prod`" in str(exc.value)
+    play.assert_not_called()
+
+    # a run that targets only yhub rolls out nothing that needs it
+    _deploy(["yhub"])
+    assert play.call_count == 1
+
+    accept_defaults(
+        monkeypatch,
+        [
+            ("select", "Database configuration:", "DATABASE_URL"),
+            ("select", "Bootstrap yhub now?", "Reuse existing in the repo"),
+        ],
+    )
+    bootstrap.bootstrap("docs", "prod", replay=bootstrap.ReplayAction.MODIFY)
+    _deploy()
+    assert play.call_count > 1
+
+
+def test_deploy_gate_passes_with_an_external_yhub(repo, monkeypatch, mocker):
+    from helpers import docs_first_run_script, script_questionary
+
+    from st_cli.cmd import bootstrap
+
+    seed_creds(repo)
+    script_questionary(
+        monkeypatch,
+        docs_first_run_script(yhub="Already deployed (enter URL + keys)")
+        + [
+            ("text", "yhub endpoints", "10.0.0.9:50601"),
+            ("text", "YHUB_API_BASE_URL", "http://yhub.internal:50601"),
+            ("password", "Y_PROVIDER_API_KEY", "ext-key"),
+        ],
+    )
+    bootstrap.bootstrap("docs", "prod")
+    _, _, play, _ = _no_side_effects(mocker)
+
+    _deploy()
+
+    assert play.call_count >= 1
+
+
+@pytest.mark.parametrize("components", [None, ["docs"], ["yprovider"]])
+def test_deploy_refuses_a_v5_tree_that_is_not_upgraded(
+    repo, monkeypatch, mocker, components
+):
+    """The new role is v6: a v5 tree must go through `st-cli upgrade` first,
+    and the legacy cleanup play must not remove yprovider before."""
+    from helpers import seed_docs_v5_tree
+
+    seed_docs_v5_tree(repo)
+    m = manifest.load_manifest()
+    for u in m.units:
+        u.bootstrapped_with = st_cli.__version__
+    manifest.save_manifest(m)
+    mocker.patch.object(drift, "pending_needs", return_value=[])
+    calls = _no_side_effects(mocker)
+
+    with pytest.raises(StCliError) as exc:
+        _deploy(components)
+
+    assert "this tree is not upgraded" in str(exc.value)
+    assert "Run `st-cli upgrade` and answer" in str(exc.value)
+    for call in calls:
+        call.assert_not_called()
+
+
+def test_dependency_gaps_leave_the_other_apps_alone(repo):
+    """Only a dependency marked `required` blocks: meet keeps livekit optional."""
+    seed_meet_unit(repo)
+    assert drift.dependency_gaps("meet", "prod") == []
+    drift.require_dependencies("meet", "prod")
+
+
+def test_doctor_sweep_reports_the_missing_required_dependency(repo, monkeypatch):
+    _docs_skipping_yhub(repo, monkeypatch)
+    warnings = drift.preflight_all("docs", "prod")
+    assert any("yhub is required and has no unit" in w for w in warnings)
+
+
+def test_reset_is_covered_by_the_same_gate(repo, monkeypatch, mocker):
+    """`reset` tears the unit down before the redeploy: the gate comes first."""
+    from st_cli.cmd import remote
+
+    _docs_skipping_yhub(repo, monkeypatch)
+    ssh = mocker.patch.object(remote, "_ssh", return_value=0)
+
+    with pytest.raises(StCliError, match="yhub is required"):
+        remote.reset("docs", "prod", "docs", assume_yes=True)
+
+    ssh.assert_not_called()
+
+
+def _follow_bootstrap_docs(monkeypatch, label):
+    """Run the command that the gate message names: `st-cli bootstrap docs prod`,
+    answering `label` for yhub."""
+    from helpers import accept_defaults, docs_yhub_script
+
+    from st_cli.cmd import bootstrap
+
+    yhub = (
+        docs_yhub_script()
+        if label.startswith("Yes")
+        else [
+            ("text", "yhub endpoints", "10.0.0.9:50601"),
+            ("text", "YHUB_API_BASE_URL", "http://yhub.internal:50601"),
+            ("password", "Y_PROVIDER_API_KEY", "ext-key"),
+        ]
+    )
+    accept_defaults(
+        monkeypatch,
+        [
+            ("select", "Database configuration:", "DATABASE_URL"),
+            ("select", "Bootstrap yhub now?", label),
+            *yhub,
+        ],
+    )
+    bootstrap.bootstrap("docs", "prod", replay=bootstrap.ReplayAction.MODIFY)
+
+
+@pytest.mark.parametrize(
+    "label", ["Yes — bootstrap now", "Already deployed (enter URL + keys)"]
+)
+def test_the_no_unit_message_names_a_command_that_clears_the_gate(
+    repo, monkeypatch, label
+):
+    _docs_skipping_yhub(repo, monkeypatch)
+    with pytest.raises(StCliError, match="has no unit"):
+        drift.require_dependencies("docs", "prod")
+
+    _follow_bootstrap_docs(monkeypatch, label)
+
+    drift.require_dependencies("docs", "prod")
+
+
+def test_the_later_warning_names_a_command_that_clears_the_gate(
+    repo, monkeypatch, capfd
+):
+    """A v5 tree upgraded with "later": the warning, followed literally, clears
+    the gate."""
+    from helpers import accept_defaults, seed_docs_v5_tree
+
+    from st_cli.cmd import upgrade as upgrade_mod
+
+    seed_docs_v5_tree(repo)
+    accept_defaults(
+        monkeypatch,
+        [
+            ("select", "Database configuration:", "DATABASE_URL"),
+            ("select", "Bootstrap yhub now?", "No — bootstrap later"),
+        ],
+    )
+    upgrade_mod.upgrade()
+    err = " ".join(capfd.readouterr().err.split())
+    assert (
+        'run `st-cli bootstrap docs prod` and answer "Yes — bootstrap now" for yhub'
+        in err
+    )
+    with pytest.raises(StCliError):
+        drift.require_dependencies("docs", "prod")
+
+    _follow_bootstrap_docs(monkeypatch, "Yes — bootstrap now")
+
+    drift.require_dependencies("docs", "prod")
+
+
+def test_the_not_upgraded_message_names_a_command_that_clears_the_gate(
+    repo, monkeypatch
+):
+    """`st-cli upgrade`, answering yes for yhub in that run, clears the gate."""
+    from helpers import accept_defaults, docs_yhub_script, seed_docs_v5_tree
+
+    from st_cli.cmd import upgrade as upgrade_mod
+
+    seed_docs_v5_tree(repo)
+    with pytest.raises(StCliError, match="not upgraded"):
+        drift.require_dependencies("docs", "prod")
+    accept_defaults(
+        monkeypatch,
+        [
+            ("select", "Database configuration:", "DATABASE_URL"),
+            ("select", "Bootstrap yhub now?", "Yes — bootstrap now"),
+            *docs_yhub_script(),
+        ],
+    )
+
+    upgrade_mod.upgrade()
+
+    drift.require_dependencies("docs", "prod")
+
+
+@pytest.mark.parametrize("empty", ["", "   ", '""', "''"])
+def test_gate_treats_an_empty_looking_value_as_not_wired(repo, monkeypatch, empty):
+    from helpers import seed_docs_yhub_unit
+
+    seed_docs_yhub_unit(repo)
+    meta_core_vars = tree.load_vars("docs", "prod", "docs")
+    meta_core_vars["st_docs_caddy_env"] = f"CADDY_YHUB_ENDPOINTS={empty}\n"
+    meta_core_vars["st_docs_backend_env"] = "YHUB_API_BASE_URL=http://y:50601\n"
+    tree.save_vars("docs", "prod", "docs", meta_core_vars)
+    m = manifest.load_manifest()
+    manifest.upsert_unit(m, UnitState("docs", "prod", "docs", "managed"))
+    manifest.save_manifest(m)
+
+    with pytest.raises(StCliError, match="does not name yhub yet"):
+        drift.require_dependencies("docs", "prod")
+
+
+def test_dependency_gaps_do_not_read_the_core_of_an_app_without_one(repo, mocker):
+    seed_meet_unit(repo)
+    spy = mocker.patch.object(drift.recover, "recover")
+    assert drift.dependency_gaps("meet", "prod") == []
+    spy.assert_not_called()

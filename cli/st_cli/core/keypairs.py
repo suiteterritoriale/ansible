@@ -1,4 +1,4 @@
-"""Ed25519 caller-keypair generation for the file-scanner JWT auth.
+"""Key generation for the JWT auth of file-scanner (Ed25519) and docs (RSA).
 
 st-cli deliberately carries no crypto dependency, and the only primitive the
 ``generate-keypairs`` command needs is deriving an Ed25519 public key from a
@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import math
 import secrets
 
 _P = 2**255 - 19
@@ -79,3 +80,86 @@ def generate_keypair() -> tuple[str, str]:
     """Mint a fresh keypair → ``(private_b64url, public_b64url)``."""
     seed = secrets.token_bytes(32)
     return _b64url(seed), _b64url(derive_public_key(seed))
+
+
+_RSA_E = 65537
+_SMALL_PRIMES = [
+    n for n in range(3, 2000, 2) if all(n % d for d in range(3, int(n**0.5) + 1, 2))
+]
+
+
+def _is_probable_prime(n: int, rounds: int = 40) -> bool:
+    if n < 2:
+        return False
+    if n == 2:
+        return True
+    if n % 2 == 0:
+        return False
+    for sp in _SMALL_PRIMES:
+        if n == sp:
+            return True
+        if n % sp == 0:
+            return False
+    d, s = n - 1, 0
+    while d % 2 == 0:
+        d //= 2
+        s += 1
+    for _ in range(rounds):
+        x = pow(2 + secrets.randbelow(n - 3), d, n)
+        if x in (1, n - 1):
+            continue
+        for _ in range(s - 1):
+            x = x * x % n
+            if x == n - 1:
+                break
+        else:
+            return False
+    return True
+
+
+def _rsa_prime(bits: int) -> int:
+    while True:
+        # Top two bits set: the product of two primes has exactly 2 * bits bits.
+        c = secrets.randbits(bits) | (3 << (bits - 2)) | 1
+        if math.gcd(c - 1, _RSA_E) == 1 and _is_probable_prime(c):
+            return c
+
+
+def _der(tag: int, body: bytes) -> bytes:
+    n = len(body)
+    if n < 0x80:
+        length = bytes([n])
+    else:
+        raw = n.to_bytes((n.bit_length() + 7) // 8, "big")
+        length = bytes([0x80 | len(raw)]) + raw
+    return bytes([tag]) + length + body
+
+
+def _der_int(n: int) -> bytes:
+    return _der(0x02, n.to_bytes(n.bit_length() // 8 + 1, "big"))
+
+
+def _rsa_pkcs8_pem(p: int, q: int) -> str:
+    """Encode the RSA key of the primes ``p > q`` as an unencrypted PKCS#8 PEM."""
+    d = pow(_RSA_E, -1, math.lcm(p - 1, q - 1))
+    numbers = [0, p * q, _RSA_E, d, p, q, d % (p - 1), d % (q - 1), pow(q, -1, p)]
+    pkcs1 = _der(0x30, b"".join(_der_int(n) for n in numbers))
+    algorithm = _der(0x30, bytes.fromhex("06092a864886f70d0101010500"))
+    pkcs8 = _der(0x30, _der_int(0) + algorithm + _der(0x04, pkcs1))
+    b64 = base64.b64encode(pkcs8).decode("ascii")
+    lines = [b64[i : i + 64] for i in range(0, len(b64), 64)]
+    return "\n".join(
+        ["-----BEGIN PRIVATE KEY-----", *lines, "-----END PRIVATE KEY-----", ""]
+    )
+
+
+def generate_rsa_private_key_pem(bits: int = 2048) -> str:
+    """Mint an RSA key (e = 65537) → unencrypted PKCS#8 PEM string."""
+    if bits < 2048 or bits % 2:
+        raise ValueError("RSA key size must be at least 2048 bits and even.")
+    half = bits // 2
+    while True:
+        p, q = _rsa_prime(half), _rsa_prime(half)
+        # FIPS 186-4: p and q must differ in their top 100 bits.
+        if abs(p - q) >> (half - 100):
+            return _rsa_pkcs8_pem(max(p, q), min(p, q))

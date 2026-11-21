@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 import ruamel.yaml
+from ruamel.yaml.scalarstring import LiteralScalarString
 
 from st_cli.cmd import bootstrap
 from st_cli.core import appmeta, manifest, paths, tree, upgrades, vault, writer
@@ -147,18 +148,29 @@ def seed_livekit_provider(repo: Path) -> None:
     vault.encrypt_file(vp)
 
 
-def seed_docs_yprovider_unit(repo: Path) -> None:
-    """Seed a bootstrapped docs/prod/yprovider unit (vars/vault/hosts).
+def seed_docs_yprovider_unit(
+    repo: Path, *, keep_manifest: bool = False, host: str = "10.0.0.9"
+) -> None:
+    """Seed a bootstrapped docs/prod/yprovider unit (vars/vault/hosts), as Docs 5
+    deployed it.
 
     The vault carries distinctive secret values so a test can tell a kept unit's
-    values apart from freshly generated ones.
+    values apart from freshly generated ones. ``keep_manifest`` adds the unit to
+    the manifest on disk instead of replacing it.
     """
     seed_creds(repo)
-    manifest.save_manifest(
-        StCliManifest(
-            "0.0.20", "0.0.20", [UnitState("docs", "prod", "yprovider", "managed")]
+    if keep_manifest:
+        m = manifest.load_manifest()
+        manifest.upsert_unit(
+            m, UnitState("docs", "prod", "yprovider", "managed", "0.6.0")
         )
-    )
+        manifest.save_manifest(m)
+    else:
+        manifest.save_manifest(
+            StCliManifest(
+                "0.0.20", "0.0.20", [UnitState("docs", "prod", "yprovider", "managed")]
+            )
+        )
     data = tree.load_vars("docs", "prod", "yprovider")
     data["st_docs_yprovider_env"] = (
         "COLLABORATION_SERVER_SECRET={{ vault_collaboration_server_secret }}\n"
@@ -168,7 +180,7 @@ def seed_docs_yprovider_unit(repo: Path) -> None:
         "COLLABORATION_LOGGING=true\n"
     )
     tree.save_vars("docs", "prod", "yprovider", data)
-    tree.write_hosts("docs", "prod", "yprovider", "yprovider", ["10.0.0.9"])
+    tree.write_hosts("docs", "prod", "yprovider", "yprovider", [host])
     vp = paths.vault_path("docs", "prod", "yprovider")
     vp.parent.mkdir(parents=True, exist_ok=True)
     with vp.open("w", encoding="utf-8") as fh:
@@ -176,6 +188,115 @@ def seed_docs_yprovider_unit(repo: Path) -> None:
             {
                 "vault_collaboration_server_secret": "kept-collab-secret",
                 "vault_y_provider_api_key": "kept-yprovider-key",
+            },
+            fh,
+        )
+    vault.encrypt_file(vp)
+
+
+def seed_docs_v5_tree(repo: Path, yprovider_host: str = "10.0.0.9") -> None:
+    """Seed the committed tree of a Docs 5 setup: the docs core with its v5 keys
+    and the yprovider unit, every stamp below the next release.
+
+    The core comes from a real first run, then the v6 keys are rewritten back to
+    their v5 shape, so the questionnaire answers match the real tree.
+    """
+    seed_creds(repo)
+    with pytest.MonkeyPatch.context() as mp:
+        script_questionary(mp, docs_first_run_script(smtp=False))
+        bootstrap.bootstrap("docs", "prod")
+
+    data = tree.load_vars("docs", "prod", "docs")
+    drop = ("YHUB_API_BASE_URL=", "JWT_PRIVATE_KEY")
+    lines = [
+        ln
+        for ln in str(data["st_docs_backend_env"]).splitlines()
+        if not ln.startswith(drop) and not ln.startswith("# ")
+    ]
+    lines = [
+        "COLLABORATION_WS_URL=wss://{{ st_docs_public_host }}/collaboration/ws/"
+        if ln.startswith("COLLABORATION_WS_URL=")
+        else f"Y_PROVIDER_API_BASE_URL=http://{yprovider_host}:50601/api/"
+        if ln.startswith("Y_PROVIDER_API_BASE_URL=")
+        else ln
+        for ln in lines
+    ]
+    lines += [
+        "COLLABORATION_API_URL=https://{{ st_docs_public_host }}/collaboration/api/",
+        "COLLABORATION_SERVER_SECRET={{ vault_collaboration_server_secret }}",
+    ]
+    data["st_docs_backend_env"] = LiteralScalarString("\n".join(lines) + "\n")
+    v5_endpoint = (
+        "host.containers.internal:50601"
+        if yprovider_host == "10.0.0.5"
+        else f"{yprovider_host}:50601"
+    )
+    caddy = str(data["st_docs_caddy_env"]).replace(
+        "CADDY_YHUB_ENDPOINTS=", f"CADDY_YPROVIDER_ENDPOINTS={v5_endpoint}"
+    )
+    data["st_docs_caddy_env"] = LiteralScalarString(caddy)
+    del data["st_docs_yprovider_env"]
+    del data["st_docs_backend_secret_files"]
+    tree.save_vars("docs", "prod", "docs", data)
+
+    vp = paths.vault_path("docs", "prod", "docs")
+    secrets = vault.decrypt_to_dict(vp)
+    secrets.pop("vault_jwt_private_key")
+    secrets["vault_collaboration_server_secret"] = "kept-collab-secret"
+    secrets["vault_y_provider_api_key"] = "kept-yprovider-key"
+    vp.unlink()
+    with vp.open("w", encoding="utf-8") as fh:
+        tree.yaml().dump(secrets, fh)
+    vault.encrypt_file(vp)
+
+    m = manifest.load_manifest()
+    for u in m.units:
+        u.bootstrapped_with = "0.6.0"
+    manifest.save_manifest(m)
+    seed_docs_yprovider_unit(repo, keep_manifest=True, host=yprovider_host)
+
+
+FAKE_PEM = (
+    "-----BEGIN PRIVATE KEY-----\nkept-yhub-key-body\n-----END PRIVATE KEY-----\n"
+)
+
+
+def seed_docs_yhub_unit(repo: Path) -> None:
+    """Seed a bootstrapped docs/prod/yhub unit (vars/vault/hosts).
+
+    The vault carries distinctive values so a test can tell a kept unit's
+    secrets apart from freshly generated ones.
+    """
+    seed_creds(repo)
+    manifest.save_manifest(
+        StCliManifest(
+            "0.0.20", "0.0.20", [UnitState("docs", "prod", "yhub", "managed")]
+        )
+    )
+    data = tree.load_vars("docs", "prod", "yhub")
+    data["st_docs_public_host"] = "docs.example.org"
+    data["st_docs_yhub_env"] = (
+        "REDIS={{ vault_redis }}\n"
+        "POSTGRES={{ vault_postgres }}\n"
+        "COLLABORATION_BACKEND_BASE_URL=https://{{ st_docs_public_host }}\n"
+        "COLLABORATION_SERVER_ORIGIN=https://{{ st_docs_public_host }}\n"
+        "Y_PROVIDER_API_KEY={{ vault_y_provider_api_key }}\n"
+        "SOFT_MIGRATION=false\n"
+    )
+    data["st_docs_yhub_secret_files"] = [
+        {"env": "YHUB_JWT_PRIVATE_KEY", "content": "{{ vault_yhub_jwt_private_key }}"}
+    ]
+    tree.save_vars("docs", "prod", "yhub", data)
+    tree.write_hosts("docs", "prod", "yhub", "yhub", ["10.0.0.9"])
+    vp = paths.vault_path("docs", "prod", "yhub")
+    vp.parent.mkdir(parents=True, exist_ok=True)
+    with vp.open("w", encoding="utf-8") as fh:
+        tree.yaml().dump(
+            {
+                "vault_redis": "redis://kept-yhub-redis:6379",
+                "vault_postgres": "postgres://yhub:kept@db:5432/yhub",
+                "vault_y_provider_api_key": "kept-yhub-api-key",
+                "vault_yhub_jwt_private_key": LiteralScalarString(FAKE_PEM),
             },
             fh,
         )
@@ -544,12 +665,12 @@ def messages_first_run_script(
 def docs_first_run_script(
     *,
     smtp: bool = False,
-    yprovider: str | None = "No — bootstrap later",
+    yhub: str | None = "No — bootstrap later",
     secret_backend: bool = True,
 ) -> list[tuple]:
     """Build a first-run docs core script.
 
-    ``yprovider=None`` omits the trailing "Bootstrap yprovider now?" select.
+    ``yhub=None`` omits the trailing "Bootstrap yhub now?" select.
     """
     script = []
     if secret_backend:
@@ -589,8 +710,99 @@ def docs_first_run_script(
             ("confirm", "Configure transactional email (SMTP) settings?", False)
         )
     script.append(("confirm", "cadvisor", True))
-    if yprovider is not None:
-        script.append(("select", "Bootstrap yprovider now?", yprovider))
+    if yhub is not None:
+        script.append(("select", "Bootstrap yhub now?", yhub))
+    return script
+
+
+def docs_yhub_script(
+    *,
+    hosts: str = "10.0.0.9",
+    migrate: bool = False,
+    postgres: str = "postgres://yhub:yhubpass@db.example.org:5432/yhub",
+    redis: str = "redis://yhub-redis.example.org:6379",
+    legacy_key_id: str = "ro-key",
+    legacy_secret: str = "ro-secret",
+) -> list[tuple]:
+    """Build the questions of a first-run yhub unit (ansible-vault backend).
+
+    The core needs no prompt in this part: DOMAIN is set and the shared secret
+    mirrors from the core buffer. ``migrate`` adds the Docs 5 bucket prompts.
+    """
+    script = [
+        ("text", "yhub host(s)", hosts),
+        ("text", "POSTGRES (", postgres),
+        ("text", "REDIS (", redis),
+        ("confirm", "Migrate the documents of a Docs 5 instance", migrate),
+    ]
+    if migrate:
+        script += [
+            ("text", "LEGACY_S3_ENDPOINT_URL", "https://s3.example.org"),
+            ("text", "LEGACY_S3_BUCKET_NAME", "docs-media"),
+            ("text", "LEGACY_S3_REGION_NAME", ""),
+            ("text", "LEGACY_S3_ACCESS_KEY_ID", legacy_key_id),
+            ("password", "LEGACY_S3_SECRET_ACCESS_KEY", legacy_secret),
+        ]
+    script.append(("confirm", "cadvisor", True))
+    return script
+
+
+def docs_hashi_script(*, migrate: bool = False, yhub: bool = True) -> list[tuple]:
+    """Build a first-run docs script on the hashi_vault backend, yhub deployed.
+
+    Every secret prompt is a lookup term. ``migrate`` adds the Docs 5 bucket.
+    """
+
+    def ref(key: str) -> str:
+        return f"@openbao(kv/data/docs:{key})"
+
+    script = [
+        ("select", "Secret backend:", "hashi_vault (OpenBao)"),
+        ("text", "OpenBao / Vault URL", "https://vault.example:8200"),
+        ("confirm", "Skip TLS verification?", False),
+        ("text", "docs host(s)", "10.0.0.5"),
+        ("text", "workers (leave blank", ""),
+        ("text", "Public domain for docs", "docs.example.org"),
+        ("text", "DJANGO_SECRET_KEY", ref("DJANGO_SECRET_KEY")),
+        ("select", "Database configuration:", "DATABASE_URL"),
+        ("text", "DATABASE_URL", ref("DATABASE_URL")),
+        ("text", "REDIS_URL", ref("REDIS_URL")),
+        ("text", "AWS_S3_ENDPOINT_URL", "https://s3.example.org"),
+        ("text", "AWS_S3_ACCESS_KEY_ID", "accesskey"),
+        ("text", "AWS_S3_SECRET_ACCESS_KEY", ref("AWS_S3_SECRET_ACCESS_KEY")),
+        ("text", "AWS_STORAGE_BUCKET_NAME", "docs-media"),
+        ("text", "AWS_S3_REGION_NAME (optional)", "fr-par"),
+        ("text", "Y_PROVIDER_API_KEY", ref("Y_PROVIDER_API_KEY")),
+        ("text", "JWT_PRIVATE_KEY", ref("JWT_PRIVATE_KEY")),
+        ("select", "Identity provider:", "keycloak"),
+        ("text", "Keycloak base URL", "https://idp.example.org"),
+        ("text", "Keycloak realm", "master"),
+        ("text", "OIDC_RP_CLIENT_ID", "docs-client-id"),
+        ("text", "OIDC_RP_CLIENT_SECRET", ref("OIDC_RP_CLIENT_SECRET")),
+        ("confirm", "Configure transactional email (SMTP) settings?", False),
+        ("confirm", "cadvisor", True),
+    ]
+    if not yhub:
+        return script + [("select", "Bootstrap yhub now?", "No — bootstrap later")]
+    script += [
+        ("select", "Bootstrap yhub now?", "Yes — bootstrap now"),
+        ("text", "yhub host(s)", "10.0.0.9"),
+        ("text", "POSTGRES", ref("POSTGRES")),
+        ("text", "REDIS", ref("REDIS")),
+        ("confirm", "Migrate the documents of a Docs 5 instance", migrate),
+    ]
+    if migrate:
+        script += [
+            ("text", "LEGACY_S3_ENDPOINT_URL", "https://s3.example.org"),
+            ("text", "LEGACY_S3_BUCKET_NAME", "docs-media"),
+            ("text", "LEGACY_S3_REGION_NAME", ""),
+            ("text", "LEGACY_S3_ACCESS_KEY_ID", "ro-key"),
+            ("text", "LEGACY_S3_SECRET_ACCESS_KEY", ref("LEGACY_S3_SECRET_ACCESS_KEY")),
+        ]
+    script += [
+        ("text", "YHUB_JWT_PRIVATE_KEY", ref("YHUB_JWT_PRIVATE_KEY")),
+        ("confirm", "cadvisor", True),
+    ]
     return script
 
 

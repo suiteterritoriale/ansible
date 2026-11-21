@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 
-from ruamel.yaml.comments import CommentedMap
+from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.scalarstring import LiteralScalarString
 
 from .. import __version__
@@ -17,10 +17,20 @@ from .errors import StCliError
 from .models import BACKEND_HASHI_VAULT
 from .secretbackend import SecretBackend
 
+_LITERAL_SAFE = frozenset(chr(c) for c in range(0x20, 0x7F)) | {"\t", "\n"}
+
 
 def _scalar(value: str):
-    """Wrap a multi-line string as a readable `|` block; leave a one-liner plain."""
-    return LiteralScalarString(value) if "\n" in value else value
+    """Wrap a multi-line string as a readable `|` block; leave a one-liner plain.
+
+    A literal block reads back only for printable ASCII, tabs and newlines (a PEM
+    passes). A carriage return, a NEL or a first line that starts with a tab keeps the
+    scalar style: the loader refuses them in a block.
+    """
+    first = next((ln for ln in value.split("\n") if ln.strip()), "")
+    if "\n" in value and set(value) <= _LITERAL_SAFE and not first.startswith("\t"):
+        return LiteralScalarString(value)
+    return value
 
 
 def gen_value(rule: dict) -> str:
@@ -117,6 +127,65 @@ def apply_component_vars(data, meta, comp, answers: dict) -> None:
         data[name] = _scalar(rendered)
 
 
+def apply_env_render(data, app: str, component_key: str, answers: dict, marker: str):
+    """Render the env blobs of a component and merge them into `data`.
+
+    Each blob var keeps its committed lines; see `envblob.merge`. A component
+    with no `env_render` spec changes nothing.
+    """
+    rendered = envrender.render_env(app, component_key, answers)
+    for blob_var, text in rendered.items():
+        existing_blob = str(data[blob_var]) if blob_var in data else ""
+        merged = envblob.merge(existing_blob, text, marker)
+        data[blob_var] = LiteralScalarString(
+            merged
+        )  # readable `|` block, with {{ vault_* }} refs
+
+
+def apply_secret_files(data, meta, comp, answers: dict) -> None:
+    """Put the secret-file items of a component in its list var of `data`.
+
+    An item is `{env, content}`. Only the keys that the manifest declares are
+    handled. A missing item is appended, and a different `content` is updated.
+    An item with `src`, and every item of the operator, stays untouched.
+    """
+    spec = meta.secret_files_spec(comp.key)
+    if not spec:
+        return
+    wanted = [(k, str(answers[k])) for k in spec["keys"] if answers.get(k)]
+    if not wanted:
+        return
+    var = spec["var"]
+    items = data.get(var)
+    if items is None:
+        items = CommentedSeq()
+    elif not isinstance(items, list):
+        keys = ", ".join(k for k, _ in wanted)
+        ui.warn(
+            f"{var} is not a list, so st-cli leaves it as it is. "
+            f"Add the item for {keys} by hand: env and content."
+        )
+        return
+    changed = False
+    for env_key, content in wanted:
+        item = next(
+            (i for i in items if hasattr(i, "get") and i.get("env") == env_key), None
+        )
+        if item is None:
+            new = CommentedMap()
+            new["env"] = env_key
+            new["content"] = content
+            items.append(new)
+            changed = True
+        elif "src" in item:
+            continue
+        elif str(item.get("content", "")) != content:
+            item["content"] = content
+            changed = True
+    if changed or var not in data:
+        data[var] = items
+
+
 def expand_var_markers(data, backend: SecretBackend) -> None:
     """Expand inline `@openbao()`/`@vault()` markers in every string leaf of a
     component's vars map, via the backend.
@@ -163,7 +232,7 @@ def write_vault(
     path.parent.mkdir(parents=True, exist_ok=True)
     cm = CommentedMap()
     for k, v in merged.items():
-        cm[k] = v
+        cm[k] = _scalar(v) if isinstance(v, str) else v
     tmp = path.with_name(path.name + ".tmp")
     try:
         # Create the tmp at 0600 (not the default 0644 under umask 022): the
@@ -221,8 +290,6 @@ def write_core(
     map and rebuilds the vault wholesale.
     """
     app, core = meta.app, meta.core()
-    rendered = envrender.render_env(app, core.key, answers)
-
     data = CommentedMap() if fresh else tree.load_vars(app, env, core.key)
     existed = bool(data)
     marker = f"# added by st-cli {__version__}"
@@ -231,12 +298,8 @@ def write_core(
     # playbook (never here), so the root base phase stays base-only.
     apply_component_vars(data, meta, core, answers)
     data[cadvisor_var(app)] = cadvisor_enabled  # real YAML bool (role spec: bool)
-    for blob_var, text in rendered.items():
-        existing_blob = str(data[blob_var]) if blob_var in data else ""
-        merged = envblob.merge(existing_blob, text, marker)
-        data[blob_var] = LiteralScalarString(
-            merged
-        )  # readable `|` block, with {{ vault_* }} refs
+    apply_env_render(data, app, core.key, answers, marker)
+    apply_secret_files(data, meta, core, answers)
     expand_var_markers(data, backend)
     if not data.ca.comment:
         # Only stamp the header when the file has no start comment already: a

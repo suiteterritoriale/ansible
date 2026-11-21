@@ -1,0 +1,38 @@
+---
+- name: "Check the legacy y-provider directory."
+  vars:
+    _docs_live_dirs: ["{{ st_docs_dir }}", "{{ st_docs_yhub_dir }}", "{{ st_docs_workers_dir }}"]
+  ansible.builtin.assert:
+    that:
+      - st_docs_yprovider_legacy_dir is match('^/[^/]+/.*[^/]$')
+      - st_docs_yprovider_legacy_dir not in _docs_live_dirs
+      - _docs_live_dirs | select('match', '^' ~ (st_docs_yprovider_legacy_dir | regex_escape) ~ '/') | list | length == 0
+    quiet: true
+    fail_msg: "st_docs_yprovider_legacy_dir must be an absolute path of two levels or more, with no trailing slash, that is not or does not contain a live docs unit directory."
+
+- name: "Remove the legacy y-provider unit, containers and directory."
+  become: true
+  become_user: "docs"
+  become_method: ansible.builtin.sudo
+  become_flags: "-i"
+  register: _docs_legacy_yprovider
+  changed_when: "'legacy y-provider removed' in _docs_legacy_yprovider.stdout"
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      unit="$HOME/.config/systemd/user/yprovider.service"
+      dir={{ st_docs_yprovider_legacy_dir | quote }}
+      if [ ! -e "$unit" ] && [ ! -d "$dir" ]; then exit 0; fi
+      if [ -d "$dir" ] && ! grep -qx 'name: docs_yprovider' "$dir/compose.yaml" 2>/dev/null; then
+        echo "refusing to remove $dir: it does not hold the docs_yprovider compose project (set st_docs_yprovider_legacy_cleanup_enabled to false to skip)" >&2
+        exit 1
+      fi
+      systemctl --user disable --now yprovider.service || true
+      systemctl --user reset-failed yprovider.service 2>/dev/null || true
+      ids="$(podman ps -aq --filter label=io.podman.compose.project=docs_yprovider)"
+      if [ -n "$ids" ]; then podman rm -f $ids; fi
+      podman pod rm -f pod_docs_yprovider 2>/dev/null || true
+      rm -f "$unit" "$HOME/.config/systemd/user/yprovider.sh"
+      systemctl --user daemon-reload
+      podman unshare rm -rf "$dir" "$dir.rollback"
+      echo "legacy y-provider removed"

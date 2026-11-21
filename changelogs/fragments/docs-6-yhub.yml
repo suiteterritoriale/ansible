@@ -1,0 +1,19 @@
+major_changes:
+  - docs - move to Docs 6.1.0. The new ``yhub`` unit (collaboration server, ``/opt/docs/yhub``, port ``st_docs_yhub_port``) replaces the ``yprovider`` unit. The y-provider conversion service now runs in the core compose, with no published port. See ``docs/06-docs/04-upgrade-v5-to-v6.md``.
+  - cli - ``st-cli bootstrap docs`` writes the ``yhub`` unit, generates the two RSA keys of Docs 6 and deploys them as secret files. ``st-cli generate-keypairs docs <env>`` mints the same keys for the hashi_vault backend and for a key rotation.
+breaking_changes:
+  - docs - the role stops with an assertion before it deploys a unit when the Docs 6 settings of that unit are missing. The checks are ``CADDY_YHUB_ENDPOINTS`` in ``st_docs_caddy_env``, ``YHUB_API_BASE_URL`` and ``JWT_PRIVATE_KEY`` for the backend, ``YHUB_API_BASE_URL`` for the workers, ``POSTGRES`` and ``REDIS`` for yhub.
+  - docs - open the port 50601 from the core hosts and from the workers hosts to the yhub hosts.
+  - cli - ``st-cli deploy`` and ``st-cli reset`` refuse docs until the yhub unit exists and the docs unit names it (``CADDY_YHUB_ENDPOINTS`` and ``YHUB_API_BASE_URL`` are not empty). Run ``st-cli bootstrap docs <env>`` and answer "bootstrap now" (or the external answer) for yhub. A standalone ``st-cli bootstrap docs <env> -c yhub`` does not wire the docs unit.
+  - docs - yhub needs its own PostgreSQL database and a durable Redis 6.2 or later, or Valkey. Set ``POSTGRES``, ``REDIS``, ``COLLABORATION_BACKEND_BASE_URL``, ``COLLABORATION_SERVER_ORIGIN`` and ``Y_PROVIDER_API_KEY`` in ``st_docs_yhub_env``. ``Y_PROVIDER_API_KEY`` must have the same value as in the backend, which keeps it.
+  - docs - the backend needs ``YHUB_API_BASE_URL`` and an RSA key in ``st_docs_backend_secret_files`` (``JWT_PRIVATE_KEY``). yhub needs ``YHUB_JWT_PRIVATE_KEY`` in ``st_docs_yhub_secret_files``. Both keys are PKCS#8 PEM.
+  - docs - removed ``st_docs_yprovider_enabled``, ``st_docs_yprovider_dir``, ``st_docs_yprovider_port``, ``st_docs_yprovider_compose_template`` and ``st_docs_yprovider_rollback_enabled``. The role removes the legacy ``yprovider`` unit from the hosts (``st_docs_yprovider_legacy_cleanup_enabled``).
+  - docs - ``st_docs_yprovider_env`` is now the env file of the conversion service in the core unit. Remove ``COLLABORATION_SERVER_SECRET`` and ``Y_PROVIDER_API_KEY`` from it.
+  - docs - ``st_docs_caddy_env`` needs ``CADDY_YHUB_ENDPOINTS`` in place of ``CADDY_YPROVIDER_ENDPOINTS``. A custom ``st_docs_compose_template`` must add the ``y-provider`` service and the ``yprovider_env`` file.
+  - docs - set ``COLLABORATION_WS_URL`` to ``wss://<host>/collaboration/ws/v1/docs`` and ``Y_PROVIDER_API_BASE_URL`` to ``http://y-provider:4444/api/``. Remove ``COLLABORATION_SERVER_SECRET`` and ``COLLABORATION_API_URL`` from ``st_docs_backend_env``.
+  - docs - existing documents need a migration. Deploy yhub with ``SOFT_MIGRATION=true`` and the ``LEGACY_S3_*`` values, then run ``python manage.py migrate_documents``. Keep the media bucket versioned and keep the ``<document-id>/file`` objects.
+  - docs - the role deletes ``st_docs_yprovider_legacy_dir`` at each deployment by default. Set ``st_docs_yprovider_legacy_cleanup_enabled`` to ``false`` to skip it.
+bugfixes:
+  - cli - a replay of an app with workers on other hosts no longer adds the workers hosts to the core group (docs, drive, messages, conversations, transfers).
+known_issues:
+  - docs - Docs 6 answers ``formatted-content`` much faster, so an application that reads many documents through the API can now reach the default anonymous throttle (``API_DOCUMENT_THROTTLE_RATE``, 80 requests per minute) and get HTTP 429. Raise the rate in ``st_docs_backend_env`` for such an instance.

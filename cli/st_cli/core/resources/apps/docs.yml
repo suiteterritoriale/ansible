@@ -3,10 +3,12 @@ app: docs
 env_docs_url: "https://github.com/suitenumerique/docs/blob/main/documentation/env.md"
 arch_docs_url: "https://github.com/suitenumerique/st-ansible/tree/main/docs/06-docs"
 requirements:
-  - "[bold]IP[/bold] or hostname of the VM(s) (docs + yprovider)"
+  - "[bold]IP[/bold] or hostname of the VM(s) (docs + yhub)"
   - "[bold]PostgreSQL[/bold] host and credentials"
   - "[bold]Redis[/bold] host and credentials"
-  - "[bold]S3[/bold] endpoint, bucket and credentials"
+  - "[bold]PostgreSQL[/bold]: a second, empty database for yhub"
+  - "[bold]Redis 6.2+ or Valkey[/bold], durable, for yhub (not the Django cache)"
+  - "[bold]S3[/bold] endpoint, bucket and credentials (bucket versioning on, for an upgrade from Docs 5)"
   - "[bold]Identity provider[/bold] URLs and credentials (ProConnect Integration: create an app at https://partenaires.proconnect.gouv.fr/)"
 components:
   - key: docs
@@ -20,7 +22,7 @@ components:
     vars:
       # single source of truth for the public docs domain: every public-facing env
       # var (DJANGO_ALLOWED_HOSTS, LOGIN/LOGOUT_REDIRECT_URL*, OIDC_REDIRECT_ALLOWED_HOSTS,
-      # COLLABORATION_WS_URL/API_URL, …) references this verbatim so an operator
+      # COLLABORATION_WS_URL, …) references this verbatim so an operator
       # changes the domain in ONE place. Mirrors meet's st_meet_public_host.
       st_docs_public_host: "{DOMAIN}"
       # Run DB migrations only once across a multi-host deploy. Plays are serial:1,
@@ -36,25 +38,50 @@ components:
         blob_var: st_docs_caddy_env
         templates:
           - docs.caddy.env.j2
+      # the converter (y-provider) runs in the core compose
+      yprovider:
+        blob_var: st_docs_yprovider_env
+        templates:
+          - docs.yprovider.env.j2
+    secret_files:
+      var: st_docs_backend_secret_files
+      keys: [JWT_PRIVATE_KEY]
+  - key: yhub
+    role: suitenumerique.st.docs
+    user: docs
+    app_name: yhub
+    dir_var: st_docs_yhub_dir
+    enabled_var: st_docs_yhub_enabled
+    deploy_order: 25
+    is_core: false
+    vars:
+      # same public domain as the core: yhub and the converter fetch the backend
+      # JWKS at https://{DOMAIN}.
+      st_docs_public_host: "{DOMAIN}"
+      # Create the yhub schema only once across a multi-host deploy. Plays are
+      # serial:1, so the role's run_once task fires on every host — gate it to
+      # the first play host. Braces are quadrupled so str.format emits literal {{ }}.
+      st_docs_yhub_run_init_db: "{{{{ true if inventory_hostname == ansible_play_hosts_all[0] else false }}}}"
+    env_render:
+      env:
+        blob_var: st_docs_yhub_env
+        templates:
+          - docs.yhub.env.j2
+    secret_files:
+      var: st_docs_yhub_secret_files
+      keys: [YHUB_JWT_PRIVATE_KEY]
+  # DEPRECATED: the v5 collaboration server. Docs 6 replaced it with yhub. Kept so
+  # an existing .st-cli.yml yprovider unit still resolves for deploy, remote and
+  # generate: its play only runs the legacy cleanup of the role. It is not a
+  # dependency target, so bootstrap never offers it.
   - key: yprovider
     role: suitenumerique.st.docs
     user: docs
     app_name: yprovider
-    dir_var: st_docs_yprovider_dir
-    enabled_var: st_docs_yprovider_enabled
+    dir_var: st_docs_yprovider_legacy_dir
+    enabled_var: st_docs_yprovider_legacy_cleanup_enabled
     deploy_order: 10
     is_core: false
-    vars:
-      # the collaboration server env: {COLLABORATION_SERVER_SECRET} and
-      # {Y_PROVIDER_API_KEY} are core-owned secrets mirrored in at bootstrap (see
-      # cmd/bootstrap.py's _ask_docs_yprovider); {DOMAIN} comes from the same
-      # answer the docs core uses.
-      st_docs_yprovider_env: |
-        COLLABORATION_SERVER_SECRET={COLLABORATION_SERVER_SECRET}
-        COLLABORATION_SERVER_ORIGIN=https://{DOMAIN}
-        COLLABORATION_BACKEND_BASE_URL=https://{DOMAIN}
-        Y_PROVIDER_API_KEY={Y_PROVIDER_API_KEY}
-        COLLABORATION_LOGGING=true
   - key: workers
     role: suitenumerique.st.docs
     user: docs
@@ -66,8 +93,12 @@ components:
     is_worker: true
 dependencies:
   - of: docs
-    on: yprovider
-    # COLLABORATION_SERVER_SECRET and Y_PROVIDER_API_KEY are owned by the docs
-    # core (generated in _ask_core) and mirrored into yprovider's vault at
-    # deploy — the messages -> pymta MDA_API_SECRET pattern.
+    on: yhub
+    # Docs 6 opens no document without yhub: deploy refuses until the unit exists
+    # (or an external yhub is recorded) and the core blobs name it.
+    required: true
+    wired_keys: [CADDY_YHUB_ENDPOINTS, YHUB_API_BASE_URL]
+    # Only Y_PROVIDER_API_KEY is owned by the docs core (generated in _ask_core)
+    # and mirrored into yhub's vault at deploy — the messages -> pymta
+    # MDA_API_SECRET pattern.
     shared: []
