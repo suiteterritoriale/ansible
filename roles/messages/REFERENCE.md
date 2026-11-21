@@ -115,7 +115,7 @@ Installs and configures the Messages application from La Suite Territoriale on D
 | st_messages_mpa_timeout | Seconds the systemd unit waits for every container of the mpa stack to report healthy. The first exav start downloads the prebuilt database before it reports healthy. | int | no | `300` |
 | st_messages_cadvisor_enabled | Triggers the installation of the cadvisor container, a Prometheus-compliant containers monitoring tool. | bool | no | `False` |
 | st_messages_cadvisor_image | Image repository for the cadvisor container. | str | no | `ghcr.io/google/cadvisor` |
-| st_messages_cadvisor_tag | Tag of the cadvisor docker image to deploy. | str | no | `v0.60.6` |
+| st_messages_cadvisor_tag | Tag of the cadvisor docker image to deploy. | str | no | `v0.61.1` |
 | st_messages_cadvisor_port | The host published port of the cadvisor container. | str | no | `127.0.0.1:50499` |
 
 #### Choices for main > st_messages_mpa_antivirus_engine

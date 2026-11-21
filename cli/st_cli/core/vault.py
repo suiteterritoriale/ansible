@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
 from . import paths
@@ -71,9 +72,11 @@ def is_encrypted(path: Path) -> bool:
 
 
 def _run_vault(
-    verb: str, path: Path, *, capture: bool = True
+    verb: str, path: Path, *, capture: bool = True, extra: Sequence[str] = ()
 ) -> subprocess.CompletedProcess:
     """Run ``ansible-vault <verb> <path>`` and raise on a non-zero exit.
+
+    ``extra`` holds options placed after the verb.
 
     ``capture=False`` lets the child inherit the terminal, for a verb (``edit``)
     that must run ``$EDITOR`` interactively.
@@ -82,6 +85,7 @@ def _run_vault(
     cmd = [
         ansible_bin("ansible-vault"),
         verb,
+        *extra,
         "--vault-password-file",
         str(pw_file),
         str(path),
@@ -106,7 +110,8 @@ def decrypt_to_dict(path: Path) -> dict:
     """Decrypt an ansible-vault ``vault.yml`` and return it as a plain dict."""
     if not path.exists():
         return {}
-    proc = _run_vault("view", path)
+    # `view` masks the vault password in its output (ansible-core 2.22+).
+    proc = _run_vault("decrypt", path, extra=("--output", "-"))
     from .tree import yaml
 
     return dict(yaml().load(proc.stdout) or {})

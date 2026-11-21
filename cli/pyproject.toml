@@ -7,11 +7,11 @@ name = "st-cli"
 version = "0.7.0"
 description = "CLI wrapper to bootstrap and operate suitenumerique.st ansible deployments"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 license = { text = "MIT" }
 authors = [{ name = "Agence nationale de la cohésion des territoires" }]
 dependencies = [
-    "typer==0.27.3",
+    "typer==0.29.2",
     "questionary==2.1.1",
     "ruamel.yaml==0.19.1",
     "jinja2==3.1.6",
@@ -20,12 +20,12 @@ dependencies = [
 
 [project.optional-dependencies]
 # cryptography is a TEST dependency only (differential Ed25519 check in
-# test_keypairs.py) — st-cli itself stays free of crypto/binary deps.
+# test_keypairs.py) — st-cli itself stays free of crypto deps.
 dev = ["pytest==9.2.0", "pytest-mock==3.17.0", "cryptography==50.0.2"]
-ansible = ["ansible-core==2.21.5"]
+ansible = ["ansible-core==2.22.0"]
 # The certifi floor keeps the eMudhra distrust for requests (CVE-2026-111943).
 hashivault = ["hvac==2.4.0", "certifi>=2026.10.19"]
-full = ["ansible-core==2.21.5", "hvac==2.4.0", "certifi>=2026.10.19"]
+full = ["ansible-core==2.22.0", "hvac==2.4.0", "certifi>=2026.10.19"]
 
 [project.scripts]
 st-cli = "st_cli.main:app"

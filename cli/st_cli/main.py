@@ -285,8 +285,8 @@ def logs(
 
 @app.command()
 def doctor(
-    app_name: str = typer.Argument(None, metavar="[APP]"),
-    env: str = typer.Argument(None, metavar="[ENV]"),
+    app_name: str = typer.Argument(None, metavar="APP"),
+    env: str = typer.Argument(None, metavar="ENV"),
     component: list[str] = typer.Option(
         None, "--component", "-c", help="(repeatable)."
     ),

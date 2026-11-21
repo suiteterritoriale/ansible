@@ -91,7 +91,7 @@ st_docs_yprovider_port: '50601'
 # Image repository for the cadvisor container.
 st_docs_cadvisor_image: ghcr.io/google/cadvisor
 # Tag of the cadvisor docker image to deploy.
-st_docs_cadvisor_tag: v0.60.6
+st_docs_cadvisor_tag: v0.61.1
 # Triggers the installation of the cadvisor container, used to send metrics to a Prometheus compatible server and logs to a Loki server.
 st_docs_cadvisor_enabled: false
 # The host published port of the cadvisor container.

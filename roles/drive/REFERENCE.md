@@ -62,7 +62,7 @@ Installs and configures the Drive application from La Suite Territoriale on Debi
 | st_drive_collabora_port | The port to open on the host, redirecting to port 9980 in the container. It can also specify the ip address, something like 127.0.0.1:9980. | str | no | `50101` |
 | st_drive_cadvisor_enabled | Triggers the installation of the cadvisor container, a Prometheus-compliant containers monitoring tool. | bool | no | `False` |
 | st_drive_cadvisor_image | Image repository for the cadvisor container. | str | no | `ghcr.io/google/cadvisor` |
-| st_drive_cadvisor_tag | Tag of the cadvisor docker image to deploy. | str | no | `v0.60.6` |
+| st_drive_cadvisor_tag | Tag of the cadvisor docker image to deploy. | str | no | `v0.61.1` |
 | st_drive_cadvisor_port | The host published port of the cadvisor container. | str | no | `127.0.0.1:50199` |
 | st_drive_collabora_fonts_src | Local path to a directory containing ttf / otf fonts to install on the collabora instance | str | no |  |
 

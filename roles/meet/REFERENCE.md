@@ -74,7 +74,7 @@ Installs and configures the meet application from La Suite Territoriale on Debia
 | st_meet_egress_rollback_enabled | Whether or not to trigger the rollback tasks if the egress deployment fails. | bool | no | `False` |
 | st_meet_egress_files | List of files to deploy for the egress application. By default deploys egress.yaml from the default template. Override this entirely to deploy a custom egress configuration. | list of `dict` | no | `[{'src': 'egress/egress.yaml.j2', 'dest': 'egress.yaml'}]` |
 | st_meet_cadvisor_image | Image repository for the cadvisor container. | str | no | `ghcr.io/google/cadvisor` |
-| st_meet_cadvisor_tag | Tag of the cadvisor docker image to deploy. | str | no | `v0.60.6` |
+| st_meet_cadvisor_tag | Tag of the cadvisor docker image to deploy. | str | no | `v0.61.1` |
 | st_meet_cadvisor_enabled | Triggers the installation of the cadvisor container, used to send metrics to a Prometheus compatible server and logs to a Loki server. | bool | no | `False` |
 | st_meet_cadvisor_port | The host published port of the cadvisor container. | str | no | `127.0.0.1:50399` |
 

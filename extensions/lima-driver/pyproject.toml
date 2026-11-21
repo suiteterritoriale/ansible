@@ -24,9 +24,9 @@ keywords = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "molecule==26.10.0",
-    "ansible-core==2.21.5",
-    "pyyaml==6.0.3",
+    "molecule==26.11.0",
+    "ansible-core==2.22.0",
+    "pyyaml==6.0.4",
     "jinja2==3.1.6",
 ]
 

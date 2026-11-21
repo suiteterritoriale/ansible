@@ -111,7 +111,7 @@ st_meet_egress_files:
 # Image repository for the cadvisor container.
 st_meet_cadvisor_image: ghcr.io/google/cadvisor
 # Tag of the cadvisor docker image to deploy.
-st_meet_cadvisor_tag: v0.60.6
+st_meet_cadvisor_tag: v0.61.1
 # Triggers the installation of the cadvisor container, used to send metrics to a Prometheus compatible server and logs to a Loki server.
 st_meet_cadvisor_enabled: false
 # The host published port of the cadvisor container.

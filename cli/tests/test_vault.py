@@ -5,7 +5,8 @@ from __future__ import annotations
 
 from helpers import file_mode
 
-from st_cli.core import paths, tree, vault
+from st_cli.core import paths, tree, vault, writer
+from st_cli.core.secretbackend import SecretBackend
 
 
 def test_vault_file_roundtrip(repo):
@@ -24,6 +25,34 @@ def test_vault_file_roundtrip(repo):
     back = vault.decrypt_to_dict(p)
     assert back["vault_django_secret_key"] == "s3cr3t"
     assert back["st_meet_livekit_api_secret"] == "abc"
+
+
+def test_decrypt_to_dict_keeps_values_that_contain_the_vault_password(repo):
+    """ansible-core 2.22 masks the vault password in `view` output: decrypt_to_dict
+    must return the true values and leave the file untouched."""
+    (repo / ".vault-pass").write_text("hunter2pass\n")
+    values = {"a": "hunter2pass", "b": "xxhunter2passyy", "c": "other"}
+    p = paths.vault_path("meet", "prod", "meet")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with p.open("w", encoding="utf-8") as fh:
+        tree.yaml().dump(values, fh)
+    vault.encrypt_file(p)
+    before = p.read_bytes()
+
+    back = vault.decrypt_to_dict(p)
+
+    assert back == values
+    assert all("$REDACTED$" not in v for v in back.values())
+    assert vault.is_encrypted(p)
+    assert p.read_bytes() == before
+
+    class _NewKeyBackend(SecretBackend):
+        def component_secrets(self, component):
+            return {"d": "new"}
+
+    writer.write_vault("meet", "prod", "meet", _NewKeyBackend())
+
+    assert vault.decrypt_to_dict(p) == {**values, "d": "new"}
 
 
 def test_vault_password_path_default_is_repo_root(repo):
