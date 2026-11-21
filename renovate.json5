@@ -12,7 +12,7 @@
 
   // Security fast-path: bypass the 7-day age for updates that fix a known
   // advisory. NOTE this only fires where Renovate has advisory data (the
-  // pep621/PyPI deps). Docker tags and the restic github-release have no
+  // pyproject/PyPI deps). Docker tags and the restic github-release have no
   // security feed, so those always wait the full 7 days.
   osvVulnerabilityAlerts: true,
   vulnerabilityAlerts: {
@@ -22,13 +22,14 @@
 
   packageRules: [
     // pyproject deps are pinned with `==`; keep replacing the exact pin.
+    // Renovate reads our pyproject.toml files with the `poetry` manager.
     {
-      matchManagers: ["pep621"],
+      matchManagers: ["pep621", "poetry"],
       rangeStrategy: "pin",
     },
     // certifi is a security floor in the cli extras, not a pin: raise it, keep `>=`.
     {
-      matchManagers: ["pep621"],
+      matchManagers: ["pep621", "poetry"],
       matchPackageNames: ["certifi"],
       rangeStrategy: "bump",
     },
@@ -38,7 +39,7 @@
       matchPackageNames: ["python", "docker.io/python", "docker.io/library/python"],
       allowedVersions: "<3.15",
     },
-    // cadvisor is pinned in 4 roles, caddy in 3 and valkey in 2. Collapse each
+    // cadvisor, caddy and valkey are pinned in more than one role. Collapse each
     // into a single grouped PR instead of one per file.
     {
       matchDatasources: ["docker"],
@@ -68,6 +69,14 @@
       matchDatasources: ["deb"],
       registryUrls: ["https://deb.debian.org/debian?suite=testing&components=main&binaryArch=amd64"],
       minimumReleaseAge: null,
+    },
+    // The ghcr.io registry gives no release timestamp, and the strict filter
+    // would hold these images forever. With `timestamp-optional`, Renovate
+    // proposes them at once, so the 7-day delay does not apply to them.
+    {
+      matchDatasources: ["docker"],
+      matchPackageNames: ["ghcr.io/**"],
+      minimumReleaseAgeBehaviour: "timestamp-optional",
     },
   ],
 
