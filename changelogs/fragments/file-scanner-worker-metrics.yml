@@ -1,5 +1,0 @@
-breaking_changes:
-  - file_scanner - file-scanner 0.5.0 replaces the ``filescanner_signature_version`` and ``filescanner_signature_outdated`` metrics with ``filescanner_clamav_db_version``, ``filescanner_clamav_db_timestamp_seconds`` and ``filescanner_clamav_up``, labelled by ``daemon``, and drops the ``api_client`` label from ``filescanner_scan_duration_seconds``. Update the dashboards and alerts that use them, see the "Upgrading from file-scanner 0.4" section of ``docs/08-file-scanner/01-file-scanner.md``.
-minor_changes:
-  - file_scanner - bump file-scanner to 0.5.0.
-  - file_scanner - publish the worker metrics endpoint (async scans, downloads, webhook deliveries, dramatiq message metrics) on ``st_file_scanner_worker_metrics_port`` (``127.0.0.1:50801`` by default, empty string disables it), and set the worker ``WORKER_METRICS_PORT`` to match. It needs file-scanner 0.5.0 or later and is protected by ``PROMETHEUS_API_KEY`` like the API ``/metrics``.

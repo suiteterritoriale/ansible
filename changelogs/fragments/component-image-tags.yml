@@ -1,7 +1,0 @@
-minor_changes:
-  - conversations - add ``st_conversations_frontend_tag`` and ``st_conversations_backend_tag``, which default to ``st_conversations_tag``, to deploy a rebuild of one image. The workers unit uses the backend tag.
-  - docs - add ``st_docs_frontend_tag``, ``st_docs_backend_tag`` and ``st_docs_yprovider_tag``, which default to ``st_docs_tag``, to deploy a rebuild of one image (for example the frontend ``v5.6.1-1`` while the backend stays on ``v5.6.1``). The workers unit uses the backend tag.
-  - drive - add ``st_drive_frontend_tag`` and ``st_drive_backend_tag``, which default to ``st_drive_tag``, to deploy a rebuild of one image. The workers unit uses the backend tag.
-  - meet - add ``st_meet_frontend_tag`` and ``st_meet_backend_tag``, which default to ``st_meet_tag``, to deploy a rebuild of one image.
-  - messages - add ``st_messages_frontend_tag`` and ``st_messages_backend_tag``, which default to ``st_messages_tag``, to deploy a rebuild of one image. The workers unit uses the backend tag.
-  - transfers - add ``st_transfers_frontend_tag`` and ``st_transfers_backend_tag``, which default to ``st_transfers_tag``, to deploy a rebuild of one image. The workers unit uses the backend tag.

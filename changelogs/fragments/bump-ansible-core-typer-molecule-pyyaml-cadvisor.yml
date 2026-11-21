@@ -1,7 +1,0 @@
-breaking_changes:
-  - cli - ``st-cli`` now requires Python 3.13 or later, because ansible-core ``2.22.0`` does not support Python 3.12.
-minor_changes:
-  - conversations, docs, drive, file_scanner, keycloak, meet, messages, projects, transfers - bump cadvisor to ``v0.61.1``.
-  - cli - bump ansible-core to ``2.22.0`` in the ``ansible`` and ``full`` extras. The ``st-cli`` image now deploys with ansible-core ``2.22``. ``st-cli`` now reads a vault file with ``ansible-vault decrypt --output -``, because ``ansible-vault view`` of ansible-core ``2.22`` replaces the vault password with ``$REDACTED$`` in its output.
-  - cli - bump typer to ``0.29.2``. Typer now requires pydantic, so an install of ``st-cli`` also installs the compiled ``pydantic_core`` module.
-  - molecule-lima - bump molecule to ``26.11.0``, ansible-core to ``2.22.0`` and pyyaml to ``6.0.4``.

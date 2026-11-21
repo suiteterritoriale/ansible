@@ -2,50 +2,90 @@
 
 **Topics**
 
-- <a href="#v0-7-0">v0\.7\.0</a>
-    - <a href="#release-summary">Release Summary</a>
+- <a href="#v0-7-1">v0\.7\.1</a>
     - <a href="#minor-changes">Minor Changes</a>
     - <a href="#breaking-changes">Breaking Changes</a>
+    - <a href="#bugfixes">Bugfixes</a>
+- <a href="#v0-7-0">v0\.7\.0</a>
+    - <a href="#release-summary">Release Summary</a>
+    - <a href="#minor-changes-1">Minor Changes</a>
+    - <a href="#breaking-changes-1">Breaking Changes</a>
     - <a href="#security-fixes">Security Fixes</a>
 - <a href="#v0-6-0">v0\.6\.0</a>
     - <a href="#release-summary-1">Release Summary</a>
-    - <a href="#minor-changes-1">Minor Changes</a>
-- <a href="#v0-5-1">v0\.5\.1</a>
     - <a href="#minor-changes-2">Minor Changes</a>
-    - <a href="#bugfixes">Bugfixes</a>
+- <a href="#v0-5-1">v0\.5\.1</a>
+    - <a href="#minor-changes-3">Minor Changes</a>
+    - <a href="#bugfixes-1">Bugfixes</a>
 - <a href="#v0-5-0">v0\.5\.0</a>
     - <a href="#release-summary-2">Release Summary</a>
-    - <a href="#minor-changes-3">Minor Changes</a>
-    - <a href="#breaking-changes-1">Breaking Changes</a>
+    - <a href="#minor-changes-4">Minor Changes</a>
+    - <a href="#breaking-changes-2">Breaking Changes</a>
     - <a href="#deprecated-features">Deprecated Features</a>
 - <a href="#v0-4-0">v0\.4\.0</a>
     - <a href="#release-summary-3">Release Summary</a>
-    - <a href="#minor-changes-4">Minor Changes</a>
-    - <a href="#bugfixes-1">Bugfixes</a>
-- <a href="#v0-3-1">v0\.3\.1</a>
     - <a href="#minor-changes-5">Minor Changes</a>
+    - <a href="#bugfixes-2">Bugfixes</a>
+- <a href="#v0-3-1">v0\.3\.1</a>
+    - <a href="#minor-changes-6">Minor Changes</a>
 - <a href="#v0-3-0">v0\.3\.0</a>
     - <a href="#release-summary-4">Release Summary</a>
-    - <a href="#minor-changes-6">Minor Changes</a>
-    - <a href="#bugfixes-2">Bugfixes</a>
+    - <a href="#minor-changes-7">Minor Changes</a>
+    - <a href="#bugfixes-3">Bugfixes</a>
     - <a href="#new-plugins">New Plugins</a>
         - <a href="#callback">Callback</a>
 - <a href="#v0-2-2">v0\.2\.2</a>
-    - <a href="#minor-changes-7">Minor Changes</a>
-    - <a href="#bugfixes-3">Bugfixes</a>
-- <a href="#v0-2-1">v0\.2\.1</a>
     - <a href="#minor-changes-8">Minor Changes</a>
+    - <a href="#bugfixes-4">Bugfixes</a>
+- <a href="#v0-2-1">v0\.2\.1</a>
+    - <a href="#minor-changes-9">Minor Changes</a>
 - <a href="#v0-2-0">v0\.2\.0</a>
     - <a href="#release-summary-5">Release Summary</a>
-    - <a href="#minor-changes-9">Minor Changes</a>
-    - <a href="#bugfixes-4">Bugfixes</a>
-- <a href="#v0-1-1">v0\.1\.1</a>
     - <a href="#minor-changes-10">Minor Changes</a>
     - <a href="#bugfixes-5">Bugfixes</a>
+- <a href="#v0-1-1">v0\.1\.1</a>
+    - <a href="#minor-changes-11">Minor Changes</a>
+    - <a href="#bugfixes-6">Bugfixes</a>
 - <a href="#v0-1-0">v0\.1\.0</a>
     - <a href="#release-summary-6">Release Summary</a>
     - <a href="#major-changes">Major Changes</a>
-    - <a href="#minor-changes-11">Minor Changes</a>
+    - <a href="#minor-changes-12">Minor Changes</a>
+
+<a id="v0-7-1"></a>
+## v0\.7\.1
+
+<a id="minor-changes"></a>
+### Minor Changes
+
+* cli \- bump ansible\-core to <code>2\.22\.0</code> in the <code>ansible</code> and <code>full</code> extras\. The <code>st\-cli</code> image now deploys with ansible\-core <code>2\.22</code>\. <code>st\-cli</code> now reads a vault file with <code>ansible\-vault decrypt \-\-output \-</code>\, because <code>ansible\-vault view</code> of ansible\-core <code>2\.22</code> replaces the vault password with <code>\$REDACTED\$</code> in its output\.
+* cli \- bump pytest to <code>9\.2\.0</code>\.
+* cli \- bump typer to <code>0\.29\.2</code>\. Typer now requires pydantic\, so an install of <code>st\-cli</code> also installs the compiled <code>pydantic\_core</code> module\.
+* conversations \- add <code>st\_conversations\_frontend\_tag</code> and <code>st\_conversations\_backend\_tag</code>\, which default to <code>st\_conversations\_tag</code>\, to deploy a rebuild of one image\. The workers unit uses the backend tag\.
+* conversations\, docs\, drive\, file\_scanner\, keycloak\, meet\, messages\, projects\, transfers \- bump cadvisor to <code>v0\.61\.1</code>\.
+* conversations\, docs\, drive\, meet\, messages \- bump caddy to <code>2\.11\.9</code>\.
+* docs \- add <code>st\_docs\_frontend\_tag</code>\, <code>st\_docs\_backend\_tag</code> and <code>st\_docs\_yprovider\_tag</code>\, which default to <code>st\_docs\_tag</code>\, to deploy a rebuild of one image \(for example the frontend <code>v5\.6\.1\-1</code> while the backend stays on <code>v5\.6\.1</code>\)\. The workers unit uses the backend tag\.
+* drive \- add <code>st\_drive\_frontend\_tag</code> and <code>st\_drive\_backend\_tag</code>\, which default to <code>st\_drive\_tag</code>\, to deploy a rebuild of one image\. The workers unit uses the backend tag\.
+* drive \- route <code>/metrics</code> to the backend on the caddy edge\, with the public <code>Host</code> header\. A scraper reads it through the load balancer\, or on the host at <code>127\.0\.0\.1\:\<st\_drive\_port\></code>\. The backend serves it only with <code>PROMETHEUS\_METRICS\_ENABLED\=true</code> and requires the <code>PROMETHEUS\_API\_KEY</code> bearer token\. Two optional lines of <code>st\_drive\_caddy\_env</code> control the route \- <code>CADDY\_METRICS\_IP\_ALLOWLIST</code> limits the client IPs \(default allows all\)\, and <code>CADDY\_METRICS\_HOST</code> sets the <code>Host</code> header \(default <code>st\_drive\_public\_host</code>\)\.
+* file\_scanner \- bump file\-scanner to 0\.5\.0\.
+* file\_scanner \- publish the worker metrics endpoint \(async scans\, downloads\, webhook deliveries\, dramatiq message metrics\) on <code>st\_file\_scanner\_worker\_metrics\_port</code> \(<code>127\.0\.0\.1\:50801</code> by default\, empty string disables it\)\, and set the worker <code>WORKER\_METRICS\_PORT</code> to match\. It needs file\-scanner 0\.5\.0 or later and is protected by <code>PROMETHEUS\_API\_KEY</code> like the API <code>/metrics</code>\.
+* meet \- add <code>st\_meet\_frontend\_tag</code> and <code>st\_meet\_backend\_tag</code>\, which default to <code>st\_meet\_tag</code>\, to deploy a rebuild of one image\.
+* meet\, messages \- bump valkey to <code>9\.2\.0</code>\. Valkey <code>9\.2\.0</code> writes the RDB format 81\, which <code>9\.1\.2</code> cannot load\, so valkey <code>9\.1\.2</code> does not start on this data\. For messages\, <code>valkey\_data</code> holds the rspamd Bayes data and history \- make a backup before the upgrade\. To go back to <code>9\.1\.2</code>\, stop the unit first\, because valkey writes the file again when it stops\. Then restore the backup \(messages\) or delete <code>valkey\_data/dump\.rdb</code> \(meet\)\, and deploy the <code>9\.1\.2</code> tag\.
+* messages \- add <code>st\_messages\_frontend\_tag</code> and <code>st\_messages\_backend\_tag</code>\, which default to <code>st\_messages\_tag</code>\, to deploy a rebuild of one image\. The workers unit uses the backend tag\.
+* messages \- bump rspamd to <code>4\.3\.0</code>\. Upstream disables Phishtank by default\, adds the <code>BAD\_DKIM\_SIGNER</code> and <code>URL\_DISPLAY\_MISMATCH</code> symbols\, and makes the SPF\, DKIM\, DMARC and MIME checks stricter\. The score of a message can change\.
+* molecule\-lima \- bump molecule to <code>26\.11\.0</code>\, ansible\-core to <code>2\.22\.0</code> and pyyaml to <code>6\.0\.4</code>\.
+* projects \- bump projects to <code>1\.27\.13</code>\. For an attachment that is not an image or a PDF\, the browser now saves the file and does not show it\.
+* transfers \- add <code>st\_transfers\_frontend\_tag</code> and <code>st\_transfers\_backend\_tag</code>\, which default to <code>st\_transfers\_tag</code>\, to deploy a rebuild of one image\. The workers unit uses the backend tag\.
+
+<a id="breaking-changes"></a>
+### Breaking Changes
+
+* cli \- <code>st\-cli</code> now requires Python 3\.13 or later\, because ansible\-core <code>2\.22\.0</code> does not support Python 3\.12\.
+* file\_scanner \- file\-scanner 0\.5\.0 replaces the <code>filescanner\_signature\_version</code> and <code>filescanner\_signature\_outdated</code> metrics with <code>filescanner\_clamav\_db\_version</code>\, <code>filescanner\_clamav\_db\_timestamp\_seconds</code> and <code>filescanner\_clamav\_up</code>\, labelled by <code>daemon</code>\, and drops the <code>api\_client</code> label from <code>filescanner\_scan\_duration\_seconds</code>\. Update the dashboards and alerts that use them\, see the \"Upgrading from file\-scanner 0\.4\" section of <code>docs/08\-file\-scanner/01\-file\-scanner\.md</code>\.
+
+<a id="bugfixes"></a>
+### Bugfixes
+
+* drive\, conversations\, messages \- the workers compose templates no longer glue <code>healthcheck\:</code> to the end of the <code>command\:</code> line\, which made the compose file invalid YAML\. Jinja <code>trim\_blocks</code> ate the newline after the <code>st\_\<app\>\_workers\_beat\_enabled</code> condition\.
 
 <a id="v0-7-0"></a>
 ## v0\.7\.0
@@ -57,7 +97,7 @@ Allow user to deploy secrets as files on supported apps\. Adds the
 <em class="title-reference">st\_\<app\>\_workers\_beat\_enabled</em> on related roles to run beat on one celery host\.
 Meet 1\.36\.0\, Drive 0\.25\.3\, Collabora 26\.04\.5\.2\.1\, and multiple minor upgrades\.
 
-<a id="minor-changes"></a>
+<a id="minor-changes-1"></a>
 ### Minor Changes
 
 * Update aar\-doc to v2\.4\.0
@@ -78,7 +118,7 @@ Meet 1\.36\.0\, Drive 0\.25\.3\, Collabora 26\.04\.5\.2\.1\, and multiple minor 
 * podman role \- add the <em class="title-reference">content</em> key to the items of <em class="title-reference">st\_podman\_application\_files</em>\. It writes an inline string instead of a <em class="title-reference">src</em> template\.
 * podman role \- add the <em class="title-reference">no\_log</em> key to the items of <em class="title-reference">st\_podman\_application\_files</em>\. It hides the value from the task output and the diff\.
 
-<a id="breaking-changes"></a>
+<a id="breaking-changes-1"></a>
 ### Breaking Changes
 
 * docs\, drive\, meet and messages roles \- the role now manages <em class="title-reference">\<app dir\>/secrets</em> and deletes it when the secret file list is empty\. If you used a custom <em class="title-reference">secrets</em> directory\, move it to the new <em class="title-reference">\*\_secret\_files</em> variables\.
@@ -103,7 +143,7 @@ healthcheck and pins file\-scanner 0\.4\.0\. The messages mpa app can run exav
 instead of clamav behind rspamd\, and deploys the rspamd bayes classifier
 config\. Bumps clamav 1\.5\.4 and rspamd 4\.2\.2\.
 
-<a id="minor-changes-1"></a>
+<a id="minor-changes-2"></a>
 ### Minor Changes
 
 * Update clamav/clamav Docker tag to v1\.5\.4
@@ -119,7 +159,7 @@ config\. Bumps clamav 1\.5\.4 and rspamd 4\.2\.2\.
 <a id="v0-5-1"></a>
 ## v0\.5\.1
 
-<a id="minor-changes-2"></a>
+<a id="minor-changes-3"></a>
 ### Minor Changes
 
 * Update dependency molecule to v26\.10\.0
@@ -127,7 +167,7 @@ config\. Bumps clamav 1\.5\.4 and rspamd 4\.2\.2\.
 * Update docker\.io/caddy Docker tag to v2\.11\.7
 * Update ghcr\.io/google/cadvisor Docker tag to v0\.60\.6
 
-<a id="bugfixes"></a>
+<a id="bugfixes-1"></a>
 ### Bugfixes
 
 * st\-cli \- read\_inventory normalises the section header of the hosts file\. A legacy socks\-proxy group written before 0\.5\.0 now matches the group socks\_proxy\, so the unit targets its hosts again\. An upgrade flag replays messages/\<env\>/socks\-proxy and rewrites the hosts file with the group socks\_proxy and the aliases socks\_proxy\<n\>\.
@@ -142,7 +182,7 @@ Added file\-scanner and transfers\. Added IP filtering on Keycloak admin path
 and Django Admin paths\. Bump podman compose to 1\.6\.0\. Deprecate messages mta\-in\,
 added messages pymta\.
 
-<a id="minor-changes-3"></a>
+<a id="minor-changes-4"></a>
 ### Minor Changes
 
 * Update dependency ansible\-core to v2\.21\.5
@@ -175,7 +215,7 @@ added messages pymta\.
 * transfers role \- add a <code>transfers</code> role deploying the Transfers application \(suitenumerique/transfers\) \- a Django backend\, a Caddy\-served React frontend and an optional Celery worker \(with the beat scheduler embedded\) \- on the rootless podman base\, with S3\-backed uploads and OIDC login\.
 * transfers\: the worker gets the Celery ping healthcheck as a <code>CMD</code> list\, replacing <code>healthcheck\: disable\: true</code>\. The probe was disabled because podman\-compose 1\.3\.0 wraps even a <code>CMD</code> list in <code>/bin/sh \-c</code>\, which the distroless backend image has no shell for\; 1\.5\.0 and later exec it directly\. The ping is a broadcast on the broker\, so with several hosts on one Redis another host\'s worker can answer for this one\.
 
-<a id="breaking-changes-1"></a>
+<a id="breaking-changes-2"></a>
 ### Breaking Changes
 
 * keycloak\: the default compose template sets <code>PORT</code> instead of <code>KC\_HTTP\_PORT</code>\, because the <code>messages\-keycloak</code> image now runs Caddy in front of Keycloak and Caddy owns the public port\. The role requires image tag 0\.10\.0 or later \(messages PR \#793\)\, and the default tag is now 0\.10\.0\. A custom <code>st\_keycloak\_compose\_template</code> must set <code>PORT</code>\, <code>KC\_HTTP\_PORT</code> and <code>KC\_HTTP\_MANAGEMENT\_PORT</code> too\.
@@ -194,7 +234,7 @@ added messages pymta\.
 
 Added cli rebootstrap and improve upgrades\, added an IP filtering setup in front of Django Admins paths\, bump drive\, docs and meet\.
 
-<a id="minor-changes-4"></a>
+<a id="minor-changes-5"></a>
 ### Minor Changes
 
 * Update dependency suitenumerique/docs to v5\.6\.1
@@ -221,7 +261,7 @@ Added cli rebootstrap and improve upgrades\, added an IP filtering setup in fron
 * drive\: a <code>drive\-caddy</code> container now owns <code>st\_drive\_port</code> and proxies the frontend\, the backend and the S3 media routes\, like docs and meet\. <code>st\_drive\_nginx\_template</code> and the <code>st\_drive\_s3\_\*</code> vars are replaced by <code>st\_drive\_caddy\_env</code> \(<code>CADDY\_S3\_\*</code>\)\, <code>st\_drive\_caddy\_image</code> and <code>st\_drive\_caddy\_tag</code>\.
 * drive\: the collabora compose file no longer sets a healthcheck\. The 26\.04\.3 image has no shell\, and podman\-compose 1\.3\.0 wraps every compose test in <code>/bin/sh \-c</code>\. Podman applies the <code>HEALTHCHECK</code> of the image \(<code>coolwsd \-\-probe</code>\) instead\. A custom <code>st\_drive\_collabora\_compose\_template</code> must drop its <code>healthcheck</code> block too\.
 
-<a id="bugfixes-1"></a>
+<a id="bugfixes-2"></a>
 ### Bugfixes
 
 * cli\: <code>st\-cli reset \-H \<alias\></code> redeploys only the selected host\. It redeployed the component on every host\.
@@ -230,7 +270,7 @@ Added cli rebootstrap and improve upgrades\, added an IP filtering setup in fron
 <a id="v0-3-1"></a>
 ## v0\.3\.1
 
-<a id="minor-changes-5"></a>
+<a id="minor-changes-6"></a>
 ### Minor Changes
 
 * Update dependency suitenumerique/docs to v5\.5\.0
@@ -250,7 +290,7 @@ sub\-apps\) and Projects \(a Planka fork\)\, both deployable end to end with
 st\-cli\. The bootstrap \"Requirements\" checklist is now app\-aware\, and
 several dependencies were bumped \(meet 1\.27\.0\, messages 0\.9\.0\, LiveKit\)\.
 
-<a id="minor-changes-6"></a>
+<a id="minor-changes-7"></a>
 ### Minor Changes
 
 * 1. added docs app support to st\-cli
@@ -264,7 +304,7 @@ several dependencies were bumped \(meet 1\.27\.0\, messages 0\.9\.0\, LiveKit\)\
 * Update docker\.io/livekit/egress Docker tag to v1\.14\.1
 * Update docker\.io/livekit/livekit\-server Docker tag to v1\.13\.5
 
-<a id="bugfixes-2"></a>
+<a id="bugfixes-3"></a>
 ### Bugfixes
 
 * \(st\-cli\) the <code>vars\.yml</code> header no longer claims secrets are stored in an encrypted <code>vault\.yml</code> when the hashi\_vault \(OpenBao\) backend is in use\, where no <code>vault\.yml</code> is written and secrets are referenced by lookup\.
@@ -280,7 +320,7 @@ several dependencies were bumped \(meet 1\.27\.0\, messages 0\.9\.0\, LiveKit\)\
 <a id="v0-2-2"></a>
 ## v0\.2\.2
 
-<a id="minor-changes-7"></a>
+<a id="minor-changes-8"></a>
 ### Minor Changes
 
 * Update docker\.io/clamav/clamav Docker tag to v1\.5\.4
@@ -291,7 +331,7 @@ several dependencies were bumped \(meet 1\.27\.0\, messages 0\.9\.0\, LiveKit\)\
 * cli\: the behind\-upstream warning on other commands now branches on pipx — without pipx it names the exact <code>docker pull ghcr\.io/suitenumerique/st\-cli\:latest</code> command to run before <code>st\-cli upgrade</code>
 * plugins\: the compact callback now prints the <code>msg</code> of a <code>debug</code> task in a green box in place of the ok line and the JSON dump
 
-<a id="bugfixes-3"></a>
+<a id="bugfixes-4"></a>
 ### Bugfixes
 
 * cli\: only push latest on new tags to follow the st\-cli collection tags
@@ -300,7 +340,7 @@ several dependencies were bumped \(meet 1\.27\.0\, messages 0\.9\.0\, LiveKit\)\
 <a id="v0-2-1"></a>
 ## v0\.2\.1
 
-<a id="minor-changes-8"></a>
+<a id="minor-changes-9"></a>
 ### Minor Changes
 
 * callback\: added the suitenumerique\.st\.compact stdout callback\, one line per task and host\, a live progress line on a TTY\, diffs for changed tasks\, and full default\-style error output
@@ -316,7 +356,7 @@ several dependencies were bumped \(meet 1\.27\.0\, messages 0\.9\.0\, LiveKit\)\
 Adds support for meet recordings\, fix openbao markers on st\-cli bootstrap
 and multiple versions upgrades\.
 
-<a id="minor-changes-9"></a>
+<a id="minor-changes-10"></a>
 ### Minor Changes
 
 * Update actions/checkout digest to 3d3c42e
@@ -329,7 +369,7 @@ and multiple versions upgrades\.
 * meet\: added custom logo handling
 * meet\: separated egress component and added recording feature to bootstrap
 
-<a id="bugfixes-4"></a>
+<a id="bugfixes-5"></a>
 ### Bugfixes
 
 * cli\: allow \@openbao markers on non\-secret fields
@@ -337,7 +377,7 @@ and multiple versions upgrades\.
 <a id="v0-1-1"></a>
 ## v0\.1\.1
 
-<a id="minor-changes-10"></a>
+<a id="minor-changes-11"></a>
 ### Minor Changes
 
 * Added Renovate configuration \(<code>renovate\.json5</code>\) and renovate Makefile target
@@ -350,7 +390,7 @@ and multiple versions upgrades\.
 * Update docker/setup\-buildx\-action action to v4
 * Update docker/setup\-qemu\-action action to v4
 
-<a id="bugfixes-5"></a>
+<a id="bugfixes-6"></a>
 ### Bugfixes
 
 * Fixed restic install task for upgrade workflow
@@ -369,7 +409,7 @@ Added st\-cli to manage LST environments bootstraps and deployments\, refactored
 * cli\: added st\-cli \#27
 * roles\: refactor every uid\, gid and ports to allow single\-host deployments \#26
 
-<a id="minor-changes-11"></a>
+<a id="minor-changes-12"></a>
 ### Minor Changes
 
 * changelog\: added antsibull\-changelog config\, Makefile targets and CI job \#13

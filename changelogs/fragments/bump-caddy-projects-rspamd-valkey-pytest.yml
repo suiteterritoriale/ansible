@@ -1,6 +1,0 @@
-minor_changes:
-  - conversations, docs, drive, meet, messages - bump caddy to ``2.11.9``.
-  - projects - bump projects to ``1.27.13``. For an attachment that is not an image or a PDF, the browser now saves the file and does not show it.
-  - messages - bump rspamd to ``4.3.0``. Upstream disables Phishtank by default, adds the ``BAD_DKIM_SIGNER`` and ``URL_DISPLAY_MISMATCH`` symbols, and makes the SPF, DKIM, DMARC and MIME checks stricter. The score of a message can change.
-  - meet, messages - bump valkey to ``9.2.0``. Valkey ``9.2.0`` writes the RDB format 81, which ``9.1.2`` cannot load, so valkey ``9.1.2`` does not start on this data. For messages, ``valkey_data`` holds the rspamd Bayes data and history - make a backup before the upgrade. To go back to ``9.1.2``, stop the unit first, because valkey writes the file again when it stops. Then restore the backup (messages) or delete ``valkey_data/dump.rdb`` (meet), and deploy the ``9.1.2`` tag.
-  - cli - bump pytest to ``9.2.0``.

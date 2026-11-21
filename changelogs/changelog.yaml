@@ -105,9 +105,9 @@ releases:
       - 'cli: ``st-cli upgrade`` now checks upstream first and, without pipx (container
         installs), tells the user to run ``docker pull ghcr.io/suitenumerique/st-cli:latest``
         and re-run ``st-cli upgrade`` instead of the pip hint'
-      - "cli: the behind-upstream warning on other commands now branches on pipx \u2014\
-        \ without pipx it names the exact ``docker pull ghcr.io/suitenumerique/st-cli:latest``\
-        \ command to run before ``st-cli upgrade``"
+      - "cli: the behind-upstream warning on other commands now branches on pipx \u2014
+        without pipx it names the exact ``docker pull ghcr.io/suitenumerique/st-cli:latest``
+        command to run before ``st-cli upgrade``"
       - 'plugins: the compact callback now prints the ``msg`` of a ``debug`` task
         in a green box in place of the ok line and the JSON dump'
     fragments:
@@ -130,15 +130,15 @@ releases:
       - (cli) added docs app support to st-cli
       - (docs) added the docs role, deploying the Docs (impress) application as a
         caddy + frontend + backend core, with workers and yprovider sub-apps
-      - "(projects) new ``projects`` role and st-cli support to deploy Projects (``suitenumerique/projects``,\
-        \ a Planka fork) \u2014 a single Sails.js container with external PostgreSQL,\
-        \ OIDC-enforced SSO (Keycloak/ProConnect provider switch) and optional S3-backed\
-        \ uploads; ``st-cli bootstrap projects <env>`` / ``st-cli deploy projects\
-        \ <env>`` behave like the other apps."
-      - "(st-cli) the bootstrap \"Requirements\" checklist is now app-aware \u2014\
-        \ each app declares the external infrastructure it needs via a ``requirements``\
-        \ manifest key \u2014 so ``projects`` and ``keycloak`` operators are no longer\
-        \ told to provision a Redis they never use."
+      - "(projects) new ``projects`` role and st-cli support to deploy Projects (``suitenumerique/projects``,
+        a Planka fork) \u2014 a single Sails.js container with external PostgreSQL,
+        OIDC-enforced SSO (Keycloak/ProConnect provider switch) and optional S3-backed
+        uploads; ``st-cli bootstrap projects <env>`` / ``st-cli deploy projects <env>``
+        behave like the other apps."
+      - "(st-cli) the bootstrap \"Requirements\" checklist is now app-aware \u2014
+        each app declares the external infrastructure it needs via a ``requirements``
+        manifest key \u2014 so ``projects`` and ``keycloak`` operators are no longer
+        told to provision a Redis they never use."
       - Update dependency molecule to v26.8.0
       - Update dependency suitenumerique/meet to v1.27.0
       - Update dependency suitenumerique/messages to v0.9.0
@@ -342,13 +342,13 @@ releases:
         start and a raised ``st_file_scanner_timeout``. The clamav defaults also gain
         ``MaxScanTime`` and ``AlertExceedsMax``, without which clamd answers OK on
         a scan it could not finish and the file is reported clean unscanned.'
-      - "file_scanner: the clamav container is now configurable through a new ``st_file_scanner_clamav_env``\
-        \ blob, empty by default and falling back to the role's built-in tuning (the\
-        \ image maps ``CLAMD_CONF_<Option>``/``FRESHCLAM_CONF_<Option>`` lines onto\
-        \ clamd.conf/freshclam.conf). The default raises clamd's size caps (``StreamMaxLength``/``MaxFileSize``/``MaxScanSize``\
-        \ to 2200M) above the scanner's 2 GiB ``MAX_URL_SIZE`` \u2014 with clamd's\
-        \ stock limits a big file either failed mid-INSTREAM on every retry or, above\
-        \ MaxFileSize/MaxScanSize, was skipped and reported clean without being scanned."
+      - "file_scanner: the clamav container is now configurable through a new ``st_file_scanner_clamav_env``
+        blob, empty by default and falling back to the role's built-in tuning (the
+        image maps ``CLAMD_CONF_<Option>``/``FRESHCLAM_CONF_<Option>`` lines onto
+        clamd.conf/freshclam.conf). The default raises clamd's size caps (``StreamMaxLength``/``MaxFileSize``/``MaxScanSize``
+        to 2200M) above the scanner's 2 GiB ``MAX_URL_SIZE`` \u2014 with clamd's stock
+        limits a big file either failed mid-INSTREAM on every retry or, above MaxFileSize/MaxScanSize,
+        was skipped and reported clean without being scanned."
       - 'keycloak: add ``st_keycloak_http_port`` (default ``50201``) and ``st_keycloak_management_port``
         (default ``50202``). The default compose template sets ``KC_HTTP_PORT`` and
         ``KC_HTTP_MANAGEMENT_PORT`` from them, so with ``network_mode: host`` Keycloak
@@ -397,12 +397,12 @@ releases:
         its hosts, broker and caller keys, keycloak no Redis/S3/OIDC ones, messages
         adds OpenSearch and MX/SPF/DKIM DNS prep, meet the LiveKit/TURN domains);
         the list is mandatory per app manifest, replacing the old generic one.
-      - "st-cli - add ``transfers`` app support (backend core + workers) to bootstrap,\
-        \ reusing the django-lasuite base env with transfers-specific overrides (``transfers.settings``\
-        \ module, frontend Caddy S3 origin, ``USE_X_FORWARDED_FOR``, optional Drive\
-        \ file-picker integration, and an optional file-scanner / antivirus integration\
-        \ \u2014 the ``SCAN_*`` keys with the EdDSA signing key kept in the vault\
-        \ and the tuning knobs left to their upstream defaults unless answered)."
+      - "st-cli - add ``transfers`` app support (backend core + workers) to bootstrap,
+        reusing the django-lasuite base env with transfers-specific overrides (``transfers.settings``
+        module, frontend Caddy S3 origin, ``USE_X_FORWARDED_FOR``, optional Drive
+        file-picker integration, and an optional file-scanner / antivirus integration
+        \u2014 the ``SCAN_*`` keys with the EdDSA signing key kept in the vault and
+        the tuning knobs left to their upstream defaults unless answered)."
       - st-cli - new ``generate-keypairs APP ENV`` command minting Ed25519 caller
         keypairs for the file-scanner JWT auth (pure-python RFC 8032 derivation, no
         crypto dependency) - asks an issuer name per keypair and prints a wiring summary
@@ -593,3 +593,85 @@ releases:
     - secret-files.yml
     - workers-beat-enabled.yml
     release_date: '2026-10-30'
+  0.7.1:
+    changes:
+      breaking_changes:
+      - cli - ``st-cli`` now requires Python 3.13 or later, because ansible-core ``2.22.0``
+        does not support Python 3.12.
+      - file_scanner - file-scanner 0.5.0 replaces the ``filescanner_signature_version``
+        and ``filescanner_signature_outdated`` metrics with ``filescanner_clamav_db_version``,
+        ``filescanner_clamav_db_timestamp_seconds`` and ``filescanner_clamav_up``,
+        labelled by ``daemon``, and drops the ``api_client`` label from ``filescanner_scan_duration_seconds``.
+        Update the dashboards and alerts that use them, see the "Upgrading from file-scanner
+        0.4" section of ``docs/08-file-scanner/01-file-scanner.md``.
+      bugfixes:
+      - drive, conversations, messages - the workers compose templates no longer glue
+        ``healthcheck:`` to the end of the ``command:`` line, which made the compose
+        file invalid YAML. Jinja ``trim_blocks`` ate the newline after the ``st_<app>_workers_beat_enabled``
+        condition.
+      minor_changes:
+      - cli - bump ansible-core to ``2.22.0`` in the ``ansible`` and ``full`` extras.
+        The ``st-cli`` image now deploys with ansible-core ``2.22``. ``st-cli`` now
+        reads a vault file with ``ansible-vault decrypt --output -``, because ``ansible-vault
+        view`` of ansible-core ``2.22`` replaces the vault password with ``$REDACTED$``
+        in its output.
+      - cli - bump pytest to ``9.2.0``.
+      - cli - bump typer to ``0.29.2``. Typer now requires pydantic, so an install
+        of ``st-cli`` also installs the compiled ``pydantic_core`` module.
+      - conversations - add ``st_conversations_frontend_tag`` and ``st_conversations_backend_tag``,
+        which default to ``st_conversations_tag``, to deploy a rebuild of one image.
+        The workers unit uses the backend tag.
+      - conversations, docs, drive, file_scanner, keycloak, meet, messages, projects,
+        transfers - bump cadvisor to ``v0.61.1``.
+      - conversations, docs, drive, meet, messages - bump caddy to ``2.11.9``.
+      - docs - add ``st_docs_frontend_tag``, ``st_docs_backend_tag`` and ``st_docs_yprovider_tag``,
+        which default to ``st_docs_tag``, to deploy a rebuild of one image (for example
+        the frontend ``v5.6.1-1`` while the backend stays on ``v5.6.1``). The workers
+        unit uses the backend tag.
+      - drive - add ``st_drive_frontend_tag`` and ``st_drive_backend_tag``, which
+        default to ``st_drive_tag``, to deploy a rebuild of one image. The workers
+        unit uses the backend tag.
+      - drive - route ``/metrics`` to the backend on the caddy edge, with the public
+        ``Host`` header. A scraper reads it through the load balancer, or on the host
+        at ``127.0.0.1:<st_drive_port>``. The backend serves it only with ``PROMETHEUS_METRICS_ENABLED=true``
+        and requires the ``PROMETHEUS_API_KEY`` bearer token. Two optional lines of
+        ``st_drive_caddy_env`` control the route - ``CADDY_METRICS_IP_ALLOWLIST``
+        limits the client IPs (default allows all), and ``CADDY_METRICS_HOST`` sets
+        the ``Host`` header (default ``st_drive_public_host``).
+      - file_scanner - bump file-scanner to 0.5.0.
+      - file_scanner - publish the worker metrics endpoint (async scans, downloads,
+        webhook deliveries, dramatiq message metrics) on ``st_file_scanner_worker_metrics_port``
+        (``127.0.0.1:50801`` by default, empty string disables it), and set the worker
+        ``WORKER_METRICS_PORT`` to match. It needs file-scanner 0.5.0 or later and
+        is protected by ``PROMETHEUS_API_KEY`` like the API ``/metrics``.
+      - meet - add ``st_meet_frontend_tag`` and ``st_meet_backend_tag``, which default
+        to ``st_meet_tag``, to deploy a rebuild of one image.
+      - meet, messages - bump valkey to ``9.2.0``. Valkey ``9.2.0`` writes the RDB
+        format 81, which ``9.1.2`` cannot load, so valkey ``9.1.2`` does not start
+        on this data. For messages, ``valkey_data`` holds the rspamd Bayes data and
+        history - make a backup before the upgrade. To go back to ``9.1.2``, stop
+        the unit first, because valkey writes the file again when it stops. Then restore
+        the backup (messages) or delete ``valkey_data/dump.rdb`` (meet), and deploy
+        the ``9.1.2`` tag.
+      - messages - add ``st_messages_frontend_tag`` and ``st_messages_backend_tag``,
+        which default to ``st_messages_tag``, to deploy a rebuild of one image. The
+        workers unit uses the backend tag.
+      - messages - bump rspamd to ``4.3.0``. Upstream disables Phishtank by default,
+        adds the ``BAD_DKIM_SIGNER`` and ``URL_DISPLAY_MISMATCH`` symbols, and makes
+        the SPF, DKIM, DMARC and MIME checks stricter. The score of a message can
+        change.
+      - molecule-lima - bump molecule to ``26.11.0``, ansible-core to ``2.22.0`` and
+        pyyaml to ``6.0.4``.
+      - projects - bump projects to ``1.27.13``. For an attachment that is not an
+        image or a PDF, the browser now saves the file and does not show it.
+      - transfers - add ``st_transfers_frontend_tag`` and ``st_transfers_backend_tag``,
+        which default to ``st_transfers_tag``, to deploy a rebuild of one image. The
+        workers unit uses the backend tag.
+    fragments:
+    - bump-ansible-core-typer-molecule-pyyaml-cadvisor.yml
+    - bump-caddy-projects-rspamd-valkey-pytest.yml
+    - component-image-tags.yml
+    - drive-backend-metrics.yml
+    - file-scanner-worker-metrics.yml
+    - workers-beat-command-newline.yml
+    release_date: '2026-11-21'
