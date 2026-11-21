@@ -116,12 +116,44 @@
     - name: "Flush handlers."
       ansible.builtin.meta: flush_handlers
 
+    # `state: started` accepts a unit that is still `activating`, such as a unit left in a
+    # failing start loop by a previous deployment, which changed nothing to restart it, and
+    # it cannot start a unit that reached its start limit. Restart any unit that is not
+    # `active` (restart.yml resets the start limit first), then require it to be.
+    - name: "Read {{ st_podman_application_name }} application state."  # noqa: command-instead-of-module
+      ansible.builtin.command:
+        cmd: "systemctl --user show --property=ActiveState --value {{ st_podman_application_name }}"
+      register: _st_podman_application_state
+      changed_when: false
+      check_mode: false
+
+    - name: "Restart {{ st_podman_application_name }} application if it is not active."
+      when: _st_podman_application_state.stdout != 'active'
+      ansible.builtin.include_tasks: application/restart.yml
+
     - name: "Ensure {{ st_podman_application_name }} application is started and enabled."
       ansible.builtin.systemd_service:
         name: "{{ st_podman_application_name }}"
         state: started
         enabled: true
         scope: user
+
+    - name: "Read {{ st_podman_application_name }} application state after the start."  # noqa: command-instead-of-module
+      when: not ansible_check_mode
+      ansible.builtin.command:
+        cmd: "systemctl --user show --property=ActiveState --value {{ st_podman_application_name }}"
+      register: _st_podman_application_state
+      changed_when: false
+
+    - name: "Assert {{ st_podman_application_name }} application is active."
+      when: not ansible_check_mode
+      ansible.builtin.assert:
+        that:
+          - _st_podman_application_state.stdout == 'active'
+        quiet: true
+        fail_msg: >-
+          {{ st_podman_application_name }} is {{ _st_podman_application_state.stdout }}, not active.
+          See journalctl --user -u {{ st_podman_application_name }}.
 
     # INFO: This will only runs if the deploy works.
     - name: "Clean up {{ st_podman_application_name }} application rollback directory."
@@ -150,11 +182,8 @@
 
         # INFO: We can't use the handlers here because if any task fails,
         # Ansible stops the execution on the host, and doesn't run the handlers.
-        - name: "ROLLBACK | systemctl --user restart {{ st_podman_application_name }}"
-          ansible.builtin.systemd_service:
-            name: "{{ st_podman_application_name }}"
-            state: restarted
-            scope: user
+        - name: "ROLLBACK | Restart {{ st_podman_application_name }}."
+          ansible.builtin.include_tasks: application/restart.yml
 
     - name: "Fail deployment."
       ansible.builtin.fail:
