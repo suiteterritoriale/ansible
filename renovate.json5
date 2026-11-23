@@ -1,19 +1,19 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["config:recommended"],
-  dependencyDashboard: true,
+  dependencyDashboard: { enabled: true },
   labels: ["dependencies"],
 
-  // Hold every update until the release is 7 days old, to avoid pulling
+  // Hold every update until the release is 3 days old, to avoid pulling
   // brand-new (and occasionally broken or yanked) versions. `strict` makes
   // the age a hard gate rather than advisory.
-  minimumReleaseAge: "7 days",
+  minimumReleaseAge: "3 days",
   internalChecksFilter: "strict",
 
-  // Security fast-path: bypass the 7-day age for updates that fix a known
+  // Security fast-path: bypass the 3-day age for updates that fix a known
   // advisory. NOTE this only fires where Renovate has advisory data (the
   // pyproject/PyPI deps). Docker tags and the restic github-release have no
-  // security feed, so those always wait the full 7 days.
+  // security feed, so those always wait the full 3 days.
   osvVulnerabilityAlerts: true,
   vulnerabilityAlerts: {
     minimumReleaseAge: "0",
@@ -71,12 +71,13 @@
       minimumReleaseAge: null,
     },
     // The ghcr.io registry gives no release timestamp, and the strict filter
-    // would hold these images forever. With `timestamp-optional`, Renovate
-    // proposes them at once, so the 7-day delay does not apply to them.
+    // would hold these images forever. The age gate is off for them, so
+    // Renovate proposes them at once. (`timestamp-optional` does the same but
+    // adds a warning to the Dependency Dashboard on each run.)
     {
       matchDatasources: ["docker"],
       matchPackageNames: ["ghcr.io/**"],
-      minimumReleaseAgeBehaviour: "timestamp-optional",
+      minimumReleaseAge: null,
     },
   ],
 

@@ -1,0 +1,4 @@
+trivial:
+  - "Renovate: migrated ``dependencyDashboard`` to an object and kept the comments in ``renovate.json5``."
+  - "Renovate: lowered the minimum release age from 7 days to 3 days."
+  - "Renovate: set ``minimumReleaseAge: null`` for the ghcr.io images, which removes the missing ``releaseTimestamp`` warnings from the Dependency Dashboard."
