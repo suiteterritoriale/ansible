@@ -2,14 +2,16 @@
 
 **Topics**
 
+- <a href="#v0-7-2">v0\.7\.2</a>
+    - <a href="#breaking-changes">Breaking Changes</a>
 - <a href="#v0-7-1">v0\.7\.1</a>
     - <a href="#minor-changes">Minor Changes</a>
-    - <a href="#breaking-changes">Breaking Changes</a>
+    - <a href="#breaking-changes-1">Breaking Changes</a>
     - <a href="#bugfixes">Bugfixes</a>
 - <a href="#v0-7-0">v0\.7\.0</a>
     - <a href="#release-summary">Release Summary</a>
     - <a href="#minor-changes-1">Minor Changes</a>
-    - <a href="#breaking-changes-1">Breaking Changes</a>
+    - <a href="#breaking-changes-2">Breaking Changes</a>
     - <a href="#security-fixes">Security Fixes</a>
 - <a href="#v0-6-0">v0\.6\.0</a>
     - <a href="#release-summary-1">Release Summary</a>
@@ -20,7 +22,7 @@
 - <a href="#v0-5-0">v0\.5\.0</a>
     - <a href="#release-summary-2">Release Summary</a>
     - <a href="#minor-changes-4">Minor Changes</a>
-    - <a href="#breaking-changes-2">Breaking Changes</a>
+    - <a href="#breaking-changes-3">Breaking Changes</a>
     - <a href="#deprecated-features">Deprecated Features</a>
 - <a href="#v0-4-0">v0\.4\.0</a>
     - <a href="#release-summary-3">Release Summary</a>
@@ -51,6 +53,14 @@
     - <a href="#major-changes">Major Changes</a>
     - <a href="#minor-changes-12">Minor Changes</a>
 
+<a id="v0-7-2"></a>
+## v0\.7\.2
+
+<a id="breaking-changes"></a>
+### Breaking Changes
+
+* st\-cli \- the repository moved to <code>github\.com/suiteterritoriale/ansible</code> and the image moved to <code>ghcr\.io/suiteterritoriale/st\-cli</code>\. <code>ghcr\.io/suitenumerique/st\-cli</code> gets no new releases after <code>0\.7\.0</code>\. If you run st\-cli from the container image\, replace <code>ghcr\.io/suitenumerique/st\-cli</code> with <code>ghcr\.io/suiteterritoriale/st\-cli</code> in your <code>st\-cli</code> shell alias\, then pull the new image\.
+
 <a id="v0-7-1"></a>
 ## v0\.7\.1
 
@@ -76,7 +86,7 @@
 * projects \- bump projects to <code>1\.27\.13</code>\. For an attachment that is not an image or a PDF\, the browser now saves the file and does not show it\.
 * transfers \- add <code>st\_transfers\_frontend\_tag</code> and <code>st\_transfers\_backend\_tag</code>\, which default to <code>st\_transfers\_tag</code>\, to deploy a rebuild of one image\. The workers unit uses the backend tag\.
 
-<a id="breaking-changes"></a>
+<a id="breaking-changes-1"></a>
 ### Breaking Changes
 
 * cli \- <code>st\-cli</code> now requires Python 3\.13 or later\, because ansible\-core <code>2\.22\.0</code> does not support Python 3\.12\.
@@ -118,7 +128,7 @@ Meet 1\.36\.0\, Drive 0\.25\.3\, Collabora 26\.04\.5\.2\.1\, and multiple minor 
 * podman role \- add the <em class="title-reference">content</em> key to the items of <em class="title-reference">st\_podman\_application\_files</em>\. It writes an inline string instead of a <em class="title-reference">src</em> template\.
 * podman role \- add the <em class="title-reference">no\_log</em> key to the items of <em class="title-reference">st\_podman\_application\_files</em>\. It hides the value from the task output and the diff\.
 
-<a id="breaking-changes-1"></a>
+<a id="breaking-changes-2"></a>
 ### Breaking Changes
 
 * docs\, drive\, meet and messages roles \- the role now manages <em class="title-reference">\<app dir\>/secrets</em> and deletes it when the secret file list is empty\. If you used a custom <em class="title-reference">secrets</em> directory\, move it to the new <em class="title-reference">\*\_secret\_files</em> variables\.
@@ -215,7 +225,7 @@ added messages pymta\.
 * transfers role \- add a <code>transfers</code> role deploying the Transfers application \(suitenumerique/transfers\) \- a Django backend\, a Caddy\-served React frontend and an optional Celery worker \(with the beat scheduler embedded\) \- on the rootless podman base\, with S3\-backed uploads and OIDC login\.
 * transfers\: the worker gets the Celery ping healthcheck as a <code>CMD</code> list\, replacing <code>healthcheck\: disable\: true</code>\. The probe was disabled because podman\-compose 1\.3\.0 wraps even a <code>CMD</code> list in <code>/bin/sh \-c</code>\, which the distroless backend image has no shell for\; 1\.5\.0 and later exec it directly\. The ping is a broadcast on the broker\, so with several hosts on one Redis another host\'s worker can answer for this one\.
 
-<a id="breaking-changes-2"></a>
+<a id="breaking-changes-3"></a>
 ### Breaking Changes
 
 * keycloak\: the default compose template sets <code>PORT</code> instead of <code>KC\_HTTP\_PORT</code>\, because the <code>messages\-keycloak</code> image now runs Caddy in front of Keycloak and Caddy owns the public port\. The role requires image tag 0\.10\.0 or later \(messages PR \#793\)\, and the default tag is now 0\.10\.0\. A custom <code>st\_keycloak\_compose\_template</code> must set <code>PORT</code>\, <code>KC\_HTTP\_PORT</code> and <code>KC\_HTTP\_MANAGEMENT\_PORT</code> too\.

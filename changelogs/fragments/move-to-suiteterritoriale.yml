@@ -1,5 +1,0 @@
----
-breaking_changes:
-  - st-cli - the repository moved to ``github.com/suiteterritoriale/ansible`` and the image moved to ``ghcr.io/suiteterritoriale/st-cli``.
-    ``ghcr.io/suitenumerique/st-cli`` gets no new releases after ``0.7.0``. If you run st-cli from the container image, replace
-    ``ghcr.io/suitenumerique/st-cli`` with ``ghcr.io/suiteterritoriale/st-cli`` in your ``st-cli`` shell alias, then pull the new image.

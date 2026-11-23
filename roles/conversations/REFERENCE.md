@@ -1,6 +1,6 @@
 <!-- BEGIN_ANSIBLE_DOCS -->
 # Ansible Role: suitenumerique.st.conversations
-Version: 0.7.1
+Version: 0.7.2
 This role deploys the Conversations application from La Suite Territoriale on a rootless podman base on Debian systems.
 
 Tags: suiteterritoriale, system
