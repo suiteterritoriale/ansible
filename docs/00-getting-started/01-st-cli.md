@@ -92,7 +92,7 @@ exit
 alias st-cli='podman run --rm -ti --userns=keep-id \
   -v "$(pwd):/st-cli" \
   -v "$SSH_AUTH_SOCK:/ssh-agent" -e SSH_AUTH_SOCK=/ssh-agent \
-  ghcr.io/suitenumerique/st-cli:latest'
+  ghcr.io/suiteterritoriale/st-cli:latest'
 ```
 
 or **Docker:**
@@ -101,7 +101,7 @@ or **Docker:**
 alias st-cli='docker run --rm -ti \
   -v "$(pwd):/st-cli" \
   -v "$SSH_AUTH_SOCK:/ssh-agent" -e SSH_AUTH_SOCK=/ssh-agent \
-  ghcr.io/suitenumerique/st-cli:latest'
+  ghcr.io/suiteterritoriale/st-cli:latest'
 ```
 
 The alias is single-quoted on purpose. Reload your shell (`exec $SHELL`) or open a new
@@ -135,7 +135,7 @@ A typical run looks like this:
 ```text
 ╭───────────────────────────────────────────────────────────── Bootstrap ─────────────────────────────────────────────────────────────╮
 │ Read how meet is architected before you start:                                                                                      │
-│   https://github.com/suitenumerique/st-ansible/tree/main/docs/03-meet                                                               │
+│   https://github.com/suiteterritoriale/ansible/tree/main/docs/03-meet                                                               │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─────────────────────────────────────────────────────────── Requirements ────────────────────────────────────────────────────────────╮
 │ Depending on the app, make sure you've prepared:                                                                                    │

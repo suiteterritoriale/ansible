@@ -64,7 +64,7 @@ def test_upgrade_behind_no_pipx_raises_docker_pull_and_stops(repo, mocker):
     with pytest.raises(StCliError) as exc_info:
         upgrade_mod.upgrade()
 
-    assert "docker pull ghcr.io/suitenumerique/st-cli:latest" in str(exc_info.value)
+    assert "docker pull ghcr.io/suiteterritoriale/st-cli:latest" in str(exc_info.value)
     boot_spy.assert_not_called()
     m = manifest.load_manifest()
     assert (m.collection_version, m.cli_version) == ("0.0.19", "0.0.19")

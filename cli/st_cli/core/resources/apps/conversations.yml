@@ -1,7 +1,7 @@
 ---
 app: conversations
 env_docs_url: "https://github.com/suitenumerique/conversations/blob/main/docs/env.md"
-arch_docs_url: "https://github.com/suitenumerique/st-ansible/tree/main/docs/09-conversations"
+arch_docs_url: "https://github.com/suiteterritoriale/ansible/tree/main/docs/09-conversations"
 requirements:
   - "[bold]IP[/bold] or hostname of the VM(s)"
   - "[bold]PostgreSQL[/bold] host and credentials"

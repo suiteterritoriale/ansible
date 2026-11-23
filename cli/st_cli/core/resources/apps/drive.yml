@@ -1,7 +1,7 @@
 ---
 app: drive
 env_docs_url: "https://github.com/suitenumerique/drive/blob/main/docs/env.md"
-arch_docs_url: "https://github.com/suitenumerique/st-ansible/tree/main/docs/01-drive"
+arch_docs_url: "https://github.com/suiteterritoriale/ansible/tree/main/docs/01-drive"
 requirements:
   - "[bold]IP[/bold] or hostname of the VM(s)"
   - "[bold]PostgreSQL[/bold] host and credentials"

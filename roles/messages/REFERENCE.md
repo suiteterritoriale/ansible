@@ -148,5 +148,5 @@ MIT
 
 La Suite territoriale @ Agence Nationale de la Cohésion des Territoires
 
-Issues: [tracker](https://github.com/suitenumerique/st-ansible/issues)
+Issues: [tracker](https://github.com/suiteterritoriale/ansible/issues)
 <!-- END_ANSIBLE_DOCS -->

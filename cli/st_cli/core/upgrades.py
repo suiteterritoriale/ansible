@@ -31,7 +31,7 @@ _INT_PREFIX = re.compile(r"\d+")
 NEXT = "next"
 NEXT_RANK = (sys.maxsize, 0, 0)
 _CHANGELOG_URL = (
-    "https://github.com/suitenumerique/st-ansible/blob/main/CHANGELOG.md#v{anchor}"
+    "https://github.com/suiteterritoriale/ansible/blob/main/CHANGELOG.md#v{anchor}"
 )
 
 

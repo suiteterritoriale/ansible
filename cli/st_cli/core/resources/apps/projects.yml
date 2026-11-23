@@ -1,7 +1,7 @@
 ---
 app: projects
 env_docs_url: "https://github.com/suitenumerique/projects/blob/main/docker-compose.yml"
-arch_docs_url: "https://github.com/suitenumerique/st-ansible/tree/main/docs/05-projects"
+arch_docs_url: "https://github.com/suiteterritoriale/ansible/tree/main/docs/05-projects"
 # projects is a Sails app: no Redis/S3 needed for a single instance (S3 uploads
 # are opt-in; Redis + S3 become mandatory only when scaling horizontally).
 requirements:

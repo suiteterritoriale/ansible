@@ -5,7 +5,7 @@
 The collection **must** be cloned into a valid collection root (e.g. it must contain `ansible_collections/namespace/collection_name`), for example:
 
 ```bash
-git clone git@github.com:suitenumerique/st-ansible.git ~/git/ansible_collections/suitenumerique/st
+git clone git@github.com:suiteterritoriale/ansible.git ~/git/ansible_collections/suitenumerique/st
 ```
 
 ## Linting
@@ -136,7 +136,7 @@ The **tag is the actual release**: the git tag is what `st-cli`'s generated
 `galaxy-requirements.yml` pins the collection to, the "newer version available"
 check follows the highest semver tag on this repo, and pushing the tag triggers
 the "CLI - Docker" workflow, which builds and pushes
-`ghcr.io/suitenumerique/st-cli:<version>` (plus `:latest`). A pushed release
+`ghcr.io/suiteterritoriale/st-cli:<version>` (plus `:latest`). A pushed release
 commit without its tag is not installable.
 
 ## Dependency updates (Renovate)

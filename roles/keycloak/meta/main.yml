@@ -7,7 +7,7 @@ galaxy_info:
   description: This role deploys a Keycloak instance for La Suite Territoriale applications on a rootless podman base on Debian systems.
   license: MIT
   min_ansible_version: 2.18.0
-  issue_tracker_url: https://github.com/suitenumerique/st-ansible/issues
+  issue_tracker_url: https://github.com/suiteterritoriale/ansible/issues
   platforms:
     - name: Debian
       versions:

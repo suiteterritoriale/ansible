@@ -3,8 +3,8 @@
 ## From a clone (development / editable)
 
 ```bash
-git clone https://github.com/suitenumerique/st-ansible.git
-cd st-ansible/cli
+git clone https://github.com/suiteterritoriale/ansible.git
+cd ansible/cli
 
 python3 -m venv .venv
 source .venv/bin/activate

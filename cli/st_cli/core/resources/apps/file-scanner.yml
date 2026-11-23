@@ -1,7 +1,7 @@
 ---
 app: file-scanner
 env_docs_url: "https://github.com/suitenumerique/file-scanner/blob/main/docs/deployment.md#configuration"
-arch_docs_url: "https://github.com/suitenumerique/st-ansible/tree/main/docs/08-file-scanner"
+arch_docs_url: "https://github.com/suiteterritoriale/ansible/tree/main/docs/08-file-scanner"
 # file-scanner bundles its own clamav daemon and needs no PostgreSQL, S3 or IdP —
 # only an external Redis as the dramatiq broker — so the generic requirements
 # checklist would be misleading.

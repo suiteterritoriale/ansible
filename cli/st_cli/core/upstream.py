@@ -19,7 +19,7 @@ import st_cli
 
 from . import manifest, pin, ui
 
-_REPO = "https://github.com/suitenumerique/st-ansible.git"
+_REPO = "https://github.com/suiteterritoriale/ansible.git"
 _TTL = 6 * 3600  # seconds
 
 NO_CHECK_ENV = "ST_CLI_NO_UPSTREAM_CHECK"
@@ -144,7 +144,7 @@ def install_hint() -> str:
     """
     if owning_pipx():
         return "pipx upgrade st-cli"
-    return "docker pull ghcr.io/suitenumerique/st-cli:latest"
+    return "docker pull ghcr.io/suiteterritoriale/st-cli:latest"
 
 
 def maybe_warn_upgrade(invoked_subcommand: str | None) -> None:

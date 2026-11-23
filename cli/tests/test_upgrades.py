@@ -40,7 +40,7 @@ def test_parse_version_next_outranks_every_release():
 def test_changelog_link_derives_anchor_from_version():
     assert (
         upgrades.changelog_link("0.4.0")
-        == "https://github.com/suitenumerique/st-ansible/blob/main/CHANGELOG.md#v0-4-0"
+        == "https://github.com/suiteterritoriale/ansible/blob/main/CHANGELOG.md#v0-4-0"
     )
 
 
@@ -182,7 +182,7 @@ def test_needed_derives_link_when_flag_has_none(tmp_path, monkeypatch):
     result = upgrades.needed(m)
     assert (
         result[0].link
-        == "https://github.com/suitenumerique/st-ansible/blob/main/CHANGELOG.md#v0-3-0"
+        == "https://github.com/suiteterritoriale/ansible/blob/main/CHANGELOG.md#v0-3-0"
     )
 
 
@@ -657,7 +657,7 @@ def test_new_component_offers_derives_link_when_flag_has_none(tmp_path, monkeypa
     result = upgrades.new_component_offers(m)
     assert (
         result[0].link
-        == "https://github.com/suitenumerique/st-ansible/blob/main/CHANGELOG.md#v0-3-0"
+        == "https://github.com/suiteterritoriale/ansible/blob/main/CHANGELOG.md#v0-3-0"
     )
 
 

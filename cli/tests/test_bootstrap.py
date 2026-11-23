@@ -1262,7 +1262,7 @@ def test_bootstrap_intro_guidance_for_core_not_provider(repo, monkeypatch, capfd
     out = capfd.readouterr().out
     intro = out.split("Bootstrapped keycloak/prod.", 1)[0]
     flat = " ".join(intro.replace("│", " ").split())
-    assert "st-ansible/tree/main/docs/02-keycloak" in flat
+    assert "suiteterritoriale/ansible/tree/main/docs/02-keycloak" in flat
     assert "Requirements" in flat
     # The checklist is app-tailored (apps/<app>.yml `requirements`): keycloak
     # needs only a database — it IS the identity provider, and uses no Redis/S3 —

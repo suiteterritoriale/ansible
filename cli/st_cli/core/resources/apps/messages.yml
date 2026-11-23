@@ -1,7 +1,7 @@
 ---
 app: messages
 env_docs_url: "https://github.com/suitenumerique/messages/blob/main/docs/env.md"
-arch_docs_url: "https://github.com/suitenumerique/st-ansible/tree/main/docs/04-messages"
+arch_docs_url: "https://github.com/suiteterritoriale/ansible/tree/main/docs/04-messages"
 requirements:
   - "[bold]IP[/bold] or hostname of the VM(s) (messages + mta-in / mpa / socks-proxy providers)"
   - "[bold]PostgreSQL[/bold] host and credentials"

@@ -8,7 +8,7 @@ Add a `galaxy-requirements.yml` file:
 
 ```yaml
 collections:
-  - name: https://github.com/suitenumerique/st-ansible.git
+  - name: https://github.com/suiteterritoriale/ansible.git
     type: git
     version: "1"
 ```

@@ -13,7 +13,7 @@ from . import appmeta, manifest, paths, tree, ui, vault
 from .errors import StCliError
 from .models import BACKEND_HASHI_VAULT, MODE_EXTERNAL
 
-_COLLECTION_REPO = "https://github.com/suitenumerique/st-ansible.git"
+_COLLECTION_REPO = "https://github.com/suiteterritoriale/ansible.git"
 _TEMPLATES = Path(__file__).resolve().parent / "resources" / "templates" / "scaffold"
 
 

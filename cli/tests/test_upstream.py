@@ -137,7 +137,7 @@ def test_maybe_warn_upgrade_behind_no_pipx_warns_docker_pull(
     msg = warn_spy.call_args[0][0]
     assert st_cli.__version__ in msg
     assert newer in msg
-    assert "docker pull ghcr.io/suitenumerique/st-cli:latest" in msg
+    assert "docker pull ghcr.io/suiteterritoriale/st-cli:latest" in msg
     assert "st-cli upgrade" not in msg
 
 
@@ -237,7 +237,7 @@ def test_maybe_warn_upgrade_pin_aligned_upstream_newer_warns_once(
     msg = warn_spy.call_args[0][0]
     assert "is behind upstream" in msg
     assert upstream_latest in msg
-    assert "docker pull ghcr.io/suitenumerique/st-cli:latest" in msg
+    assert "docker pull ghcr.io/suiteterritoriale/st-cli:latest" in msg
     assert "st-cli upgrade" not in msg
 
 
@@ -260,7 +260,7 @@ def test_maybe_warn_upgrade_cli_older_than_pin_warns_pull_hint_only(
     assert st_cli.__version__ in msg
     assert pinned in msg
     assert "older than the .st-cli.yml pin" in msg
-    assert "docker pull ghcr.io/suitenumerique/st-cli:latest" in msg
+    assert "docker pull ghcr.io/suiteterritoriale/st-cli:latest" in msg
     assert "is behind upstream" not in msg
 
 

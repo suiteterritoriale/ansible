@@ -67,7 +67,7 @@ def inject_consumer(
 
 
 _REFERENCE_URL = (
-    "https://github.com/suitenumerique/st-ansible/blob/main/roles/{role}/REFERENCE.md"
+    "https://github.com/suiteterritoriale/ansible/blob/main/roles/{role}/REFERENCE.md"
 )
 
 

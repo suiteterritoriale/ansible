@@ -19,7 +19,7 @@ Podman (rootless, recommended):
 alias st-cli='podman run --rm -ti --userns=keep-id \
   -v "$(pwd):/st-cli" \
   -v "$SSH_AUTH_SOCK:/ssh-agent" -e SSH_AUTH_SOCK=/ssh-agent \
-  ghcr.io/suitenumerique/st-cli:latest'
+  ghcr.io/suiteterritoriale/st-cli:latest'
 ```
 
 Docker:
@@ -28,7 +28,7 @@ Docker:
 alias st-cli='docker run --rm -ti \
   -v "$(pwd):/st-cli" \
   -v "$SSH_AUTH_SOCK:/ssh-agent" -e SSH_AUTH_SOCK=/ssh-agent \
-  ghcr.io/suitenumerique/st-cli:latest'
+  ghcr.io/suiteterritoriale/st-cli:latest'
 ```
 
 Reload your shell with `exec $SHELL`, or open a new terminal. Then check it works:
@@ -61,7 +61,7 @@ authoritative and runs under the same Python that has `hvac`. This fixes the
 split-interpreter problem with `community.hashi_vault`:
 
 ```bash
-pipx install "st-cli[full] @ git+https://github.com/suitenumerique/st-ansible.git#subdirectory=cli"
+pipx install "st-cli[full] @ git+https://github.com/suiteterritoriale/ansible.git#subdirectory=cli"
 
 st-cli --help
 ```
@@ -69,7 +69,7 @@ st-cli --help
 Pin a specific release by adding a git ref before the `#`:
 
 ```bash
-pipx install "st-cli[full] @ git+https://github.com/suitenumerique/st-ansible.git@<tag>#subdirectory=cli"
+pipx install "st-cli[full] @ git+https://github.com/suiteterritoriale/ansible.git@<tag>#subdirectory=cli"
 ```
 
 Replace `<tag>` with the release you want, for example `0.3.1`.
@@ -149,8 +149,8 @@ not have to check by hand:
 Using the container:
 
 ```bash
-podman pull ghcr.io/suitenumerique/st-cli:latest
-# or docker pull ghcr.io/suitenumerique/st-cli:latest
+podman pull ghcr.io/suiteterritoriale/st-cli:latest
+# or docker pull ghcr.io/suiteterritoriale/st-cli:latest
 ```
 
 Using pipx:
@@ -314,8 +314,8 @@ the rebootstrap done beforehand.
 ### Using the container
 
 ```bash
-podman rmi ghcr.io/suitenumerique/st-cli:latest
-# or docker rmi ghcr.io/suitenumerique/st-cli:latest
+podman rmi ghcr.io/suiteterritoriale/st-cli:latest
+# or docker rmi ghcr.io/suiteterritoriale/st-cli:latest
 ```
 
 ### Using pipx
