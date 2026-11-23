@@ -408,7 +408,7 @@ argument_specs:
           - "The tag of the exav docker image to use."
           - "See https://github.com/sylvinus/exav/pkgs/container/exav."
         # renovate: datasource=docker depName=ghcr.io/sylvinus/exav
-        default: "0.0.2"
+        default: "0.0.3"
       st_messages_mpa_exav_db_url:
         type: "str"
         description:
