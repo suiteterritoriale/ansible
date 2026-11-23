@@ -127,7 +127,7 @@ argument_specs:
         type: "str"
         description: "Tag of the docspec docker image to deploy."
         # renovate: datasource=docker depName=ghcr.io/docspecio/api
-        default: "3.0.1"
+        default: "3.0.2"
       st_docs_rollback_enabled:
         type: "bool"
         description: "Whether or not to trigger the rollback tasks if the docs deployment fails."
