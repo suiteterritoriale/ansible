@@ -30,7 +30,7 @@ argument_specs:
         type: "str"
         description: "Tag of the transfers docker images to deploy. Requires >= 0.5.0: background tasks run on dramatiq, so the CLI writes `WORKER_BROKER_URL` and the workers unit is probed with `python worker.py --ping`, neither of which an earlier image has."
         # renovate: datasource=github-releases depName=suitenumerique/transfers versioning=semver
-        default: "0.5.0"
+        default: "v0.5.3"
       st_transfers_frontend_tag:
         type: "str"
         description:
