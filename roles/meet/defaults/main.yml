@@ -15,7 +15,7 @@ st_meet_frontend_image: docker.io/lasuite/meet-frontend
 # Image repository for the meet backend.
 st_meet_backend_image: docker.io/lasuite/meet-backend
 # Tag of the meet docker image to deploy.
-st_meet_tag: v1.36.3
+st_meet_tag: v1.37.0
 # Tag of the meet frontend docker image to deploy.
 # Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_meet_tag.
 st_meet_frontend_tag: '{{ st_meet_tag }}'

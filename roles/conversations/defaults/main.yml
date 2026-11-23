@@ -9,7 +9,7 @@ st_conversations_frontend_image: docker.io/lasuite/conversations-frontend
 # Image repository for the conversations backend.
 st_conversations_backend_image: docker.io/lasuite/conversations-backend
 # Tag of the conversations docker images to deploy.
-st_conversations_tag: v0.0.25
+st_conversations_tag: v0.0.29
 # Tag of the conversations frontend docker image to deploy.
 # Set it only to deploy a rebuild of this image. Remove the override before you upgrade the collection or change st_conversations_tag.
 st_conversations_frontend_tag: '{{ st_conversations_tag }}'

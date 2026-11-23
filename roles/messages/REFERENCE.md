@@ -83,7 +83,7 @@ Installs and configures the Messages application from La Suite Territoriale on D
 | st_messages_mpa_caddy_port | The host published port for the caddy /checkv2 endpoint. | str | no | `50402` |
 | st_messages_mpa_caddy_healthcheck_port | The host published port for the caddy /healthcheck endpoint. | str | no | `50403` |
 | st_messages_mpa_rspamd_image | Image repository for the mpa rspamd. | str | no | `docker.io/rspamd/rspamd` |
-| st_messages_mpa_rspamd_tag | The tag of the rspamd docker image to use. See https://hub.docker.com/r/rspamd/rspamd/tags. | str | no | `4.3.0` |
+| st_messages_mpa_rspamd_tag | The tag of the rspamd docker image to use. See https://hub.docker.com/r/rspamd/rspamd/tags. | str | no | `4.3.1` |
 | st_messages_mpa_rspamd_controller_password | Password of the rspamd controller webui. | str | no |  |
 | st_messages_mpa_rspamd_controller_port | The host published port for the rspamd controller/webui. | str | no | `50404` |
 | st_messages_mpa_rspamd_add_header_score | The score triggering the add_header action on Messages. | str | no | `4` |
@@ -100,7 +100,7 @@ Installs and configures the Messages application from La Suite Territoriale on D
 | st_messages_mpa_unbound_tag | Tag of the unbound docker image to use. alpinelinux/unbound publishes no versioned tags, only latest. | str | no | `latest` |
 | st_messages_mpa_unbound_config_template | Local path to the unbound.conf template. | str | no | `mpa/unbound.conf.j2` |
 | st_messages_mpa_clamav_image | Image repository for the mpa clamav. | str | no | `docker.io/clamav/clamav` |
-| st_messages_mpa_clamav_tag | The tag of the clamav docker image to use. See https://hub.docker.com/r/clamav/clamav/tags. | str | no | `1.5.4` |
+| st_messages_mpa_clamav_tag | The tag of the clamav docker image to use. See https://hub.docker.com/r/clamav/clamav/tags. | str | no | `1.5.5` |
 | st_messages_mpa_clamav_config_template | Local path to the clamd.conf template. | str | no | `mpa/clamd.conf.j2` |
 | st_messages_mpa_antivirus_engine | The antivirus engine behind rspamd. `clamav` runs the clamav daemon. `exav` runs the exav daemon instead, on the same clamd protocol, and serves the prebuilt database from `st_messages_mpa_exav_db_url`. | str | no | `clamav` |
 | st_messages_mpa_exav_image | Image repository for the mpa exav. | str | no | `ghcr.io/sylvinus/exav` |

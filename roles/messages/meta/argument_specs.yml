@@ -308,7 +308,7 @@ argument_specs:
           - "The tag of the rspamd docker image to use."
           - "See https://hub.docker.com/r/rspamd/rspamd/tags."
         # renovate: datasource=docker depName=docker.io/rspamd/rspamd
-        default: "4.3.0"
+        default: "4.3.1"
       st_messages_mpa_rspamd_controller_password:
         type: "str"
         description: "Password of the rspamd controller webui."
@@ -388,7 +388,7 @@ argument_specs:
           - "The tag of the clamav docker image to use."
           - "See https://hub.docker.com/r/clamav/clamav/tags."
         # renovate: datasource=docker depName=docker.io/clamav/clamav
-        default: "1.5.4"
+        default: "1.5.5"
       st_messages_mpa_clamav_config_template:
         type: "str"
         description: "Local path to the clamd.conf template."
