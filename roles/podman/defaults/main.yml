@@ -36,4 +36,12 @@ st_podman_application_restart_policy: on-abnormal
 # Whether or not to trigger the rollback tasks if the deployment fails.
 st_podman_application_rollback_enabled: false
 # The timeout for starting the application compose.
+# It does not include the image pull, see `st_podman_application_pull_timeout`.
 st_podman_application_timeout: 300
+# The timeout, in seconds, for pulling the images of the application compose at each start.
+# When the pull fails or times out, the start continues: `up` uses the images already on the host, and pulls only the images that are missing.
+st_podman_application_pull_timeout: 600
+# The number of starts of the application unit that systemd allows within a window of `(st_podman_application_start_limit_burst + 1) × (st_podman_application_pull_timeout + st_podman_application_timeout + 60)` seconds, the first start and the automatic restarts included.
+# Beyond it, systemd stops restarting the unit and leaves it `failed`. A deployment resets this counter before it restarts the unit.
+# Set it to 0 to disable the limit: systemd then restarts the unit without end.
+st_podman_application_start_limit_burst: 4

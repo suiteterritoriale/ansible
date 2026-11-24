@@ -3,24 +3,45 @@
 Description={{ st_podman_application_name }} on rootless podman with compose file.
 Wants=network-online.target podman.socket
 After=network-online.target podman.socket
+{% if st_podman_application_start_limit_burst > 0 %}
+# Stop restarting a unit that keeps failing. A failed start lasts at most about
+# PULL_TIMEOUT + TIMEOUT + 60s (pull, wait, stop): the window holds one more start than
+# the burst, so a loop of failed starts always reaches the limit, and the unit stays
+# `failed`. A deployment resets this counter before it restarts the unit.
+StartLimitIntervalSec={{ (st_podman_application_pull_timeout + st_podman_application_timeout + 60) * (st_podman_application_start_limit_burst + 1) }}
+StartLimitBurst={{ st_podman_application_start_limit_burst }}
+{% else %}
+# No start limit: systemd restarts a failing unit without end.
+StartLimitIntervalSec=0
+{% endif %}
 
 [Service]
 Type=notify
 NotifyAccess=all
 Restart={{ st_podman_application_restart_policy }}
+{% if st_podman_application_restart_policy != 'no' %}
+# The ExecStart script exits 75 when the start times out: restart on it, whatever the
+# policy above, until the start limit.
+RestartForceExitStatus=75
+{% endif %}
 
 WorkingDirectory={{ st_podman_application_dir }}
 
-ExecStartPre=-podman-compose --no-ansi pull
 ExecStart=%h/.config/systemd/user/{{ st_podman_application_name }}.sh
 
 # This allows graceful stop before SIGKILL
 ExecStop=podman-compose --no-ansi stop
-# ExecStopPost executes on any stop, including failure to avoids leftover pieces of namespace
+# ExecStopPost executes on any stop, including failure to avoids leftover pieces of namespace.
+# A one-off container (`podman-compose run`) that still runs keeps the pod and the network:
+# `down` removes the service containers only, and the next start reuses the pod.
 ExecStopPost=podman-compose --no-ansi down
 
+Environment=PULL_TIMEOUT={{ st_podman_application_pull_timeout }}
 Environment=TIMEOUT={{ st_podman_application_timeout }}
-# TIMEOUT + 30s buffer for podman-compose overhead (pulling, network setup, etc.)
+# The ExecStart script labels the containers it creates with this unit name.
+Environment=UNIT={{ st_podman_application_name }}
+# Covers the launch of the ExecStart script only: the script pushes the deadline for
+# the image pull, then for the wait on the containers.
 TimeoutStartSec={{ st_podman_application_timeout + 30 }}
 
 [Install]
