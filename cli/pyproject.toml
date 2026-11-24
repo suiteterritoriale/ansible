@@ -25,7 +25,7 @@ dev = ["pytest==9.2.0", "pytest-mock==3.17.0", "cryptography==50.0.2"]
 ansible = ["ansible-core==2.22.0"]
 # The certifi floor keeps the eMudhra distrust for requests (CVE-2026-111943).
 hashivault = ["hvac==2.4.0", "certifi>=2026.10.19"]
-full = ["ansible-core==2.22.0", "hvac==2.4.0", "certifi>=2026.10.23"]
+full = ["ansible-core==2.22.0", "hvac==2.4.0", "certifi>=2026.11.20"]
 
 [project.scripts]
 st-cli = "st_cli.main:app"
