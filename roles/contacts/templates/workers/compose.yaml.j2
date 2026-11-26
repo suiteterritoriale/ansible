@@ -1,0 +1,26 @@
+---
+{{ ansible_managed | comment }}
+
+name: contacts_workers
+services:
+  worker:
+    container_name: contacts-worker
+    image: "{{ st_contacts_backend_image }}:{{ st_contacts_tag }}"
+    env_file: ./env
+{% if st_contacts_workers_secret_files | length > 0 %}
+    environment:
+{% for secret in st_contacts_workers_secret_files %}
+      {{ secret.env }}_FILE: /run/secrets/{{ secret.env }}
+{% endfor %}
+    volumes:
+      - ./secrets:/run/secrets:ro
+{% endif %}
+    command: ["python", "worker.py"]
+    # The image healthcheck probes the web server, which does not run here. This one pings the
+    # dramatiq queue of this container, so no other host can answer for it. It can fail when every
+    # worker thread is busy.
+    healthcheck:
+      test: ["CMD", "python", "worker.py", "--ping"]
+      interval: 1m
+      timeout: 10s
+      start_interval: 5s

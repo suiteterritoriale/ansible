@@ -118,10 +118,12 @@ When you add or change a prompt:
 4. Decide whether the release needs an entry in `upgrades.yml` (next section).
 
 Per-app entry points: `_ask_core` (Django apps: meet, drive, messages, docs,
-conversations), `_ask_keycloak`, `_ask_projects`. `_handle_dependency` runs
+conversations, transfers, contacts), `_ask_keycloak`, `_ask_projects`. `_handle_dependency` runs
 the provider questionnaires. Keycloak is not a Django app. Messages uses
 `STORAGE_MESSAGE_*`, never `AWS_S3_*`. Conversations reads `DB_*` only
 (`_DISCRETE_DB_APPS`): no DB-mode select, `DATABASE_URL` is never written.
+Contacts has no S3 and no SMTP, and runs on dramatiq: `DRAMATIQ_*`, never
+`CELERY_*`.
 
 ### 3.2 Release flags (`resources/upgrades.yml`)
 

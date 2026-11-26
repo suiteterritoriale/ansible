@@ -1,0 +1,43 @@
+---
+{{ ansible_managed | comment }}
+
+name: contacts
+services:
+  # Caddy: serves the SPA and proxies the backend paths to CONTACTS_FRONTEND_BACKEND_SERVER
+  # (frontend env).
+  frontend:
+    container_name: contacts-frontend
+    image: "{{ st_contacts_frontend_image }}:{{ st_contacts_tag }}"
+    env_file: ./frontend_env
+    ports:
+      - "{{ st_contacts_port }}:8080"
+    # The images are in OCI format, and podman ignores the HEALTHCHECK of an OCI image.
+    # Same probe as the image. The image is distroless: lprobe is its only probe tool.
+    healthcheck:
+      test: ["CMD", "/usr/bin/lprobe", "-mode=http", "-port=8080", "-endpoint=/__lbheartbeat__"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  backend:
+    container_name: contacts-backend
+    image: "{{ st_contacts_backend_image }}:{{ st_contacts_tag }}"
+    env_file: ./backend_env
+{% if st_contacts_backend_secret_files | length > 0 %}
+    environment:
+{% for secret in st_contacts_backend_secret_files %}
+      {{ secret.env }}_FILE: /run/secrets/{{ secret.env }}
+{% endfor %}
+    volumes:
+      - ./secrets:/run/secrets:ro
+{% endif %}
+    # /__heartbeat__/ checks the database. Django rejects a Host that is not in ALLOWED_HOSTS.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "--header", "Host: {{ st_contacts_public_host }}", "http://127.0.0.1:8000/__heartbeat__/"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 10s

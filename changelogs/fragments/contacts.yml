@@ -1,0 +1,3 @@
+minor_changes:
+  - "contacts: add a ``contacts`` role that deploys the Contacts application (suitenumerique/contacts) as a frontend (Caddy) + backend core with a Dramatiq workers sub-app on the rootless podman base. The images default to the upstream ``main`` tag, because Contacts has no release yet."
+  - "cli: add ``contacts`` app support to bootstrap: no S3 or SMTP prompts, a generated ``SALT_KEY``, ``DRAMATIQ_BROKER_URL`` and ``DRAMATIQ_RESULT_BACKEND_URL`` derived from ``REDIS_URL``, and the frontend env with ``CONTACTS_FRONTEND_BACKEND_SERVER``."

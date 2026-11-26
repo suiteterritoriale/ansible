@@ -1450,6 +1450,48 @@ def test_ask_core_conversations_forces_db_vars_and_prompts_llm(monkeypatch):
     assert "st_conversations_caddy_env" not in rendered
 
 
+def test_ask_core_contacts_skips_s3_and_smtp(monkeypatch):
+    """`_ask_core` for contacts asks no S3 or SMTP question, sets
+    contacts.settings, generates SALT_KEY, and derives the dramatiq URLs from
+    REDIS_URL instead of CELERY_BROKER_URL."""
+    sq = script_questionary(
+        monkeypatch,
+        [
+            ("text", "Public domain for contacts", "contacts.example.org"),
+            ("select", "Database configuration:", "DATABASE_URL"),
+            ("text", "DATABASE_URL", "postgres://contacts"),
+            ("text", "REDIS_URL", "redis://redis:6379/0"),
+            ("select", "Identity provider:", "keycloak"),
+            ("text", "Keycloak base URL", "https://idp.example.org"),
+            ("text", "Keycloak realm", "master"),
+            ("text", "OIDC_RP_CLIENT_ID", "contacts-client-id"),
+            ("password", "OIDC_RP_CLIENT_SECRET", "oidc-secret"),
+        ],
+    )
+    meta = appmeta.load_app("contacts")
+    answers = bootstrap._ask_core(meta, AnsibleVaultBackend())
+
+    assert not sq._scripts, f"unconsumed scripts: {sq._scripts}"
+    assert answers["DJANGO_SETTINGS_MODULE"] == "contacts.settings"
+    assert answers["DJANGO_ALLOWED_HOSTS"] == "contacts.example.org"
+    assert answers["SALT_KEY"] == "{{ vault_salt_key }}"
+    assert answers["DRAMATIQ_BROKER_URL"] == "{{ vault_redis_url }}"
+    assert answers["DRAMATIQ_RESULT_BACKEND_URL"] == "{{ vault_redis_url }}"
+    assert answers["NUM_PROXIES"] == "1"
+    assert "CELERY_BROKER_URL" not in answers
+    assert "AWS_S3_ENDPOINT_URL" not in answers
+
+    rendered = envrender.render_env("contacts", "contacts", answers)
+    backend_body = rendered["st_contacts_backend_env"]
+    assert "SALT_KEY={{ vault_salt_key }}" in backend_body
+    assert "DRAMATIQ_BROKER_URL={{ vault_redis_url }}" in backend_body
+    assert "CELERY_BROKER_URL" not in backend_body
+    assert "AWS_S3_" not in backend_body
+    assert "DJANGO_EMAIL_" not in backend_body
+    frontend_body = rendered["st_contacts_frontend_env"]
+    assert "CONTACTS_FRONTEND_BACKEND_SERVER=contacts-backend:8000" in frontend_body
+
+
 def test_bootstrap_docs_full_deploys_yprovider(repo, monkeypatch):
     """Full `bootstrap docs prod` deploying yprovider on a single host generates
     and mirrors the shared secrets without re-prompting for them."""

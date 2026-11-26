@@ -12,6 +12,7 @@ import pytest
 from helpers import (
     ACCEPT_DEFAULT,
     accept_defaults,
+    contacts_first_run_script,
     conversations_first_run_script,
     docs_first_run_script,
     drive_first_run_script,
@@ -333,6 +334,53 @@ def test_wire_only_core_run_rejects_override_and_omits_it_from_select(
     ]
     assert select_choices, "the 3-way select did not appear"
     assert not any("Override" in c for c in select_choices[0])
+
+
+def test_contacts_round_trip_byte_identical(repo, monkeypatch):
+    """A contacts bootstrap asks no S3 or SMTP question, generates SALT_KEY,
+    writes the dramatiq keys and the frontend env, and stays byte-identical
+    across a Modify replay and a later Silent replay."""
+    seed_creds(repo)
+    sq1 = script_questionary(monkeypatch, contacts_first_run_script())
+    bootstrap.bootstrap("contacts", "prod")
+    assert not sq1._scripts, f"unconsumed scripts: {sq1._scripts}"
+    assert not sq1.asked("text", "AWS_S3_ENDPOINT_URL")
+    assert not sq1.asked("confirm", "Configure transactional email (SMTP) settings?")
+
+    vars_path = repo / "contacts/prod/contacts/vars.yml"
+    vault_path = repo / "contacts/prod/contacts/vault.yml"
+    core_vars_before = vars_path.read_text()
+    core_vault_before = vault_path.read_bytes()
+
+    assert "st_contacts_public_host: contacts.example.org" in core_vars_before
+    assert "SALT_KEY={{ vault_salt_key }}" in core_vars_before
+    assert "DRAMATIQ_BROKER_URL={{ vault_redis_url }}" in core_vars_before
+    assert "DRAMATIQ_RESULT_BACKEND_URL={{ vault_redis_url }}" in core_vars_before
+    assert "NUM_PROXIES=1" in core_vars_before
+    assert "CELERY_BROKER_URL" not in core_vars_before
+    assert "AWS_S3_" not in core_vars_before
+    assert "CONTACTS_FRONTEND_BACKEND_SERVER=contacts-backend:8000" in core_vars_before
+
+    decrypted = vault.decrypt_to_dict(paths.vault_path("contacts", "prod", "contacts"))
+    assert "," not in decrypted["vault_salt_key"]
+
+    sq2 = accept_defaults(monkeypatch)
+    bootstrap.bootstrap("contacts", "prod", replay=bootstrap.ReplayAction.MODIFY)
+    assert not sq2._scripts, f"unconsumed scripts: {sq2._scripts}"
+    assert vars_path.read_text() == core_vars_before
+    assert vault_path.read_bytes() == core_vault_before
+
+    m = manifest.load_manifest()
+    for u in m.units:
+        u.bootstrapped_with = "0.0.1"
+    manifest.save_manifest(m)
+
+    sq3 = script_questionary(monkeypatch, [])
+    bootstrap.bootstrap("contacts", "prod", replay=bootstrap.ReplayAction.SILENT)
+    assert not sq3._scripts, f"unconsumed scripts: {sq3._scripts}"
+    assert not sq3.select_calls, f"a select fired: {sq3.select_calls}"
+    assert vars_path.read_text() == core_vars_before
+    assert vault_path.read_bytes() == core_vault_before
 
 
 def test_conversations_round_trip_byte_identical(repo, monkeypatch):

@@ -14,7 +14,7 @@ The collection provides two monitoring components:
 
 cAdvisor is a container monitoring tool that exposes resource usage and performance metrics for running containers.
 It is available as an optional add-on for every application role: `drive`, `keycloak`, `meet`,
-`messages`, `projects`, `docs` and `conversations`.
+`messages`, `projects`, `docs`, `conversations` and `contacts`.
 
 ### Variables
 
@@ -23,8 +23,8 @@ It is available as an optional add-on for every application role: `drive`, `keyc
 | `st_<role>_cadvisor_enabled` | Enable cAdvisor for this role | `false` |
 | `st_<role>_cadvisor_port` | Host published port | per-role, see below |
 
-Replace `<role>` with `drive`, `keycloak`, `meet`, `messages`, `projects`, `docs`, or
-`conversations`. Each role binds cAdvisor on a distinct localhost port by default so several
+Replace `<role>` with `drive`, `keycloak`, `meet`, `messages`, `projects`, `docs`,
+`conversations`, or `contacts`. Each role binds cAdvisor on a distinct localhost port by default so several
 roles can co-exist on one host:
 
 | Role | `st_<role>_cadvisor_port` default |
@@ -36,6 +36,7 @@ roles can co-exist on one host:
 | `projects` | `127.0.0.1:50599` |
 | `docs` | `127.0.0.1:50699` |
 | `conversations` | `127.0.0.1:50999` |
+| `contacts` | `127.0.0.1:51199` |
 
 ### Network & Ports
 

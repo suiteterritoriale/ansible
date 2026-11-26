@@ -1,0 +1,21 @@
+---
+- name: "Deploy contacts."
+  ansible.builtin.import_tasks: deploy/contacts.yml
+  when: st_contacts_enabled
+  tags: ['contacts_contacts']
+
+- name: "Deploy contacts workers."
+  ansible.builtin.import_tasks: deploy/workers.yml
+  when: st_contacts_workers_enabled
+  tags: ['contacts_workers']
+
+- name: "Create cadvisor application."
+  when: st_contacts_cadvisor_enabled
+  tags: ['contacts_cadvisor']
+  ansible.builtin.import_role:
+    name: suitenumerique.st.podman
+    tasks_from: application.yml
+  vars:
+    st_podman_user: "contacts"
+    st_podman_application_name: "cadvisor"
+    st_podman_application_compose_template: monitoring/compose_cadvisor.yaml.j2
